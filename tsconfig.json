@@ -1,0 +1,56 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    
+    // 엄격한 타입 체크
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitReturns": true,
+    "noImplicitOverride": true,
+    
+    // 경로 매핑
+    "baseUrl": ".",
+    "paths": {
+      "@gaesup-state/core": ["./packages/core/src"],
+      "@gaesup-state/state": ["./packages/state/src"],
+      "@gaesup-state/react": ["./packages/frameworks/react/src"],
+      "@gaesup-state/vue": ["./packages/frameworks/vue/src"],
+      "@gaesup-state/registry": ["./packages/registry/src"]
+    },
+    
+    // 출력 설정
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "outDir": "./dist",
+    "removeComments": false,
+    "importHelpers": true,
+    
+    // 실험적 기능
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true
+  },
+  "include": [
+    "packages/*/src/**/*",
+    "examples/*/src/**/*",
+    "*.config.*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "build",
+    "**/*.test.*",
+    "**/__tests__/*"
+  ]
+} 

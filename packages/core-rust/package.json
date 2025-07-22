@@ -1,0 +1,9 @@
+{
+  "name": "@gaesup-state/core-rust",
+  "version": "0.2.0",
+  "main": "pkg/gaesup_state_core.js",
+  "types": "pkg/gaesup_state_core.d.ts",
+  "files": [
+    "pkg"
+  ]
+} 

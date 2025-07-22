@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>🚀 Gaesup-State: Multi-Framework Neon Demo</title>
+  
+  <!-- WASM 보안 헤더 -->
+  <meta http-equiv="Cross-Origin-Opener-Policy" content="same-origin">
+  <meta http-equiv="Cross-Origin-Embedder-Policy" content="require-corp">
+  
+  <!-- 프리로드 -->
+  <link rel="preload" href="/wasm/counter.wasm" as="fetch" type="application/wasm" crossorigin>
+  
+  <!-- 다크모드 네온 글래스모피즘 스타일 -->
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', 'SF Pro Display', -apple-system, BlinkMacSystemFont,
+        'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Helvetica Neue', sans-serif;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      
+      /* 다크모드 배경 */
+      background: linear-gradient(135deg, 
+        #0c0f17 0%, 
+        #1a1f2e 25%,
+        #151a2b 50%,
+        #0f1421 75%,
+        #0a0d16 100%);
+      background-size: 400% 400%;
+      animation: darkGradientShift 20s ease infinite;
+      
+      color: #cbd5e1;
+      min-height: 100vh;
+      display: grid;
+      grid-template-areas: 
+        "header header"
+        "sidebar main"
+        "footer footer";
+      grid-template-rows: 80px 1fr 60px;
+      grid-template-columns: 320px 1fr;
+      gap: 1px;
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    @keyframes darkGradientShift {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+
+    /* 네온 글로우 효과 - 부드럽게 수정 */
+    @keyframes neonPulse {
+      0%, 100% { box-shadow: 0 0 3px currentColor, 0 0 6px currentColor, 0 0 9px currentColor; }
+      50% { box-shadow: 0 0 6px currentColor, 0 0 12px currentColor, 0 0 18px currentColor; }
+    }
+
+    @keyframes textGlow {
+      0%, 100% { text-shadow: 0 0 3px currentColor, 0 0 6px currentColor; }
+      50% { text-shadow: 0 0 6px currentColor, 0 0 12px currentColor, 0 0 18px currentColor; }
+    }
+
+    /* React 헤더 - 파란색 테마 */
+    .header {
+      grid-area: header;
+      background: rgba(15, 23, 42, 0.8);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(59, 130, 246, 0.15);
+      border-top: 2px solid rgba(59, 130, 246, 0.25);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      
+      color: #cbd5e1;
+      display: flex;
+      align-items: center;
+      padding: 0 2rem;
+      position: relative;
+    }
+
+    .header::after {
+      content: '⚛️ React Header';
+      position: absolute;
+      top: 8px;
+      right: 20px;
+      background: rgba(59, 130, 246, 0.1);
+      color: #7dd3fc;
+      padding: 4px 12px;
+      border-radius: 8px;
+      border: 1px solid rgba(59, 130, 246, 0.15);
+      font-size: 0.75rem;
+      font-weight: 500;
+    }
+
+    .header h1 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      color: #7dd3fc;
+    }
+
+    .header .stats {
+      margin-left: auto;
+      display: flex;
+      gap: 2rem;
+      font-size: 0.9rem;
+    }
+
+    .header .stat {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 8px 12px;
+      background: rgba(59, 130, 246, 0.05);
+      border-radius: 8px;
+      border: 1px solid rgba(59, 130, 246, 0.1);
+    }
+
+    .header .stat-value {
+      font-weight: bold;
+      font-size: 1.2rem;
+      color: #7dd3fc;
+    }
+
+    .header .stat-label {
+      opacity: 0.7;
+      font-size: 0.8rem;
+      color: #94a3b8;
+    }
+
+    /* Angular 사이드바 - 빨간색 테마 */
+    .sidebar {
+      grid-area: sidebar;
+      background: rgba(15, 23, 42, 0.8);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(239, 68, 68, 0.15);
+      border-left: 2px solid rgba(239, 68, 68, 0.25);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      
+      color: #cbd5e1;
+      padding: 2rem 1.5rem;
+      overflow-y: auto;
+      position: relative;
+    }
+
+    .sidebar::after {
+      content: '🅰️ Angular Sidebar';
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      background: rgba(239, 68, 68, 0.1);
+      color: #fca5a5;
+      padding: 4px 12px;
+      border-radius: 8px;
+      border: 1px solid rgba(239, 68, 68, 0.15);
+      font-size: 0.75rem;
+      font-weight: 500;
+    }
+
+    .sidebar h2 {
+      font-size: 1.2rem;
+      margin-bottom: 1.5rem;
+      margin-top: 1.5rem;
+      color: #fca5a5;
+    }
+
+    .sidebar .control-group {
+      margin-bottom: 2rem;
+    }
+
+    .sidebar .control-group h3 {
+      font-size: 1rem;
+      margin-bottom: 1rem;
+      color: #f1a5a5;
+      opacity: 0.8;
+    }
+
+    .sidebar .control-btn {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      margin-bottom: 0.5rem;
+      background: rgba(239, 68, 68, 0.05);
+      backdrop-filter: blur(5px);
+      border: 1px solid rgba(239, 68, 68, 0.15);
+      color: #f1a5a5;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-size: 0.9rem;
+    }
+
+    .sidebar .control-btn:hover {
+      background: rgba(239, 68, 68, 0.1);
+      border-color: rgba(239, 68, 68, 0.2);
+      transform: translateX(2px);
+    }
+
+    .sidebar .info-panel {
+      background: rgba(239, 68, 68, 0.03);
+      backdrop-filter: blur(5px);
+      border: 1px solid rgba(239, 68, 68, 0.1);
+      padding: 1rem;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      line-height: 1.4;
+    }
+
+    .sidebar .info-panel .info-item {
+      margin-bottom: 0.5rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid rgba(239, 68, 68, 0.05);
+      color: #cbd5e1;
+    }
+
+    .sidebar .info-panel .info-item:last-child {
+      border-bottom: none;
+      margin-bottom: 0;
+    }
+
+    .sidebar .info-panel strong {
+      color: #f1a5a5;
+    }
+
+    /* Svelte 메인 - 주황색 테마 */
+    .main {
+      grid-area: main;
+      background: rgba(15, 23, 42, 0.8);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(249, 115, 22, 0.15);
+      border-top: 2px solid rgba(249, 115, 22, 0.25);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      
+      padding: 2rem;
+      overflow-y: auto;
+      position: relative;
+    }
+
+    .main::after {
+      content: '🔥 Svelte Main';
+      position: absolute;
+      top: 12px;
+      right: 20px;
+      background: rgba(249, 115, 22, 0.1);
+      color: #fdba74;
+      padding: 4px 12px;
+      border-radius: 8px;
+      border: 1px solid rgba(249, 115, 22, 0.15);
+      font-size: 0.75rem;
+      font-weight: 500;
+    }
+
+    .main h2 {
+      font-size: 2rem;
+      margin-bottom: 1rem;
+      margin-top: 1rem;
+      color: #fdba74;
+    }
+
+    .counter-section {
+      background: rgba(249, 115, 22, 0.03);
+      backdrop-filter: blur(5px);
+      border: 1px solid rgba(249, 115, 22, 0.1);
+      border-left: 3px solid rgba(249, 115, 22, 0.25);
+      padding: 2rem;
+      border-radius: 12px;
+      margin-bottom: 2rem;
+      position: relative;
+    }
+
+    .counter-display {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+
+    .count-number {
+      font-size: 4rem;
+      font-weight: bold;
+      color: #fdba74;
+      margin-bottom: 0.5rem;
+    }
+
+    .count-meta {
+      color: #94a3b8;
+      font-size: 0.9rem;
+    }
+
+    .counter-controls {
+      display: flex;
+      gap: 1rem;
+      justify-content: center;
+      margin-bottom: 2rem;
+    }
+
+    .btn {
+      padding: 0.75rem 1.5rem;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 500;
+      transition: all 0.2s ease;
+      font-size: 0.95rem;
+      backdrop-filter: blur(5px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .btn-primary {
+      background: rgba(59, 130, 246, 0.1);
+      color: #7dd3fc;
+      border-color: rgba(59, 130, 246, 0.15);
+    }
+
+    .btn-primary:hover {
+      background: rgba(59, 130, 246, 0.15);
+    }
+
+    .btn-secondary {
+      background: rgba(107, 114, 128, 0.1);
+      color: #9ca3af;
+      border-color: rgba(107, 114, 128, 0.15);
+    }
+
+    .btn-secondary:hover {
+      background: rgba(107, 114, 128, 0.15);
+    }
+
+    .btn-danger {
+      background: rgba(239, 68, 68, 0.1);
+      color: #fca5a5;
+      border-color: rgba(239, 68, 68, 0.15);
+    }
+
+    .btn-danger:hover {
+      background: rgba(239, 68, 68, 0.15);
+    }
+
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+    }
+
+    .metric-card {
+      background: rgba(249, 115, 22, 0.03);
+      backdrop-filter: blur(5px);
+      border: 1px solid rgba(249, 115, 22, 0.1);
+      padding: 1.5rem;
+      border-radius: 12px;
+      text-align: center;
+      transition: all 0.2s ease;
+    }
+
+    .metric-card:hover {
+      border-color: rgba(249, 115, 22, 0.15);
+    }
+
+    .metric-card h4 {
+      color: #94a3b8;
+      font-size: 0.85rem;
+      margin-bottom: 0.5rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .metric-card .metric-value {
+      font-size: 1.8rem;
+      font-weight: bold;
+      color: #fdba74;
+    }
+
+    /* Vue 푸터 - 녹색 테마 + 상태 관리 효과 */
+    .footer {
+      grid-area: footer;
+      background: rgba(15, 23, 42, 0.8);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(34, 197, 94, 0.15);
+      border-bottom: 2px solid rgba(34, 197, 94, 0.25);
+      box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.1);
+      
+      color: #cbd5e1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 2rem;
+      position: relative;
+    }
+
+    .footer::after {
+      content: '💚 Vue Footer';
+      position: absolute;
+      top: 8px;
+      right: 20px;
+      background: rgba(34, 197, 94, 0.1);
+      color: #86efac;
+      padding: 4px 12px;
+      border-radius: 8px;
+      border: 1px solid rgba(34, 197, 94, 0.15);
+      font-size: 0.75rem;
+      font-weight: 500;
+    }
+
+    .footer .footer-left {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      font-size: 0.9rem;
+    }
+
+    .footer .status-indicator {
+      width: 8px;
+      height: 8px;
+      background: #86efac;
+      border-radius: 50%;
+      transition: all 0.3s ease;
+    }
+
+    .footer .status-indicator.active {
+      background: #22c55e;
+      box-shadow: 0 0 8px rgba(34, 197, 94, 0.5);
+    }
+
+    .footer .status-text {
+      color: #86efac;
+      transition: all 0.3s ease;
+    }
+
+    .footer .status-text.updating {
+      color: #fbbf24;
+    }
+
+    .footer .footer-right {
+      display: flex;
+      gap: 1rem;
+      font-size: 0.85rem;
+    }
+
+    .footer .footer-item {
+      opacity: 0.8;
+      color: #94a3b8;
+      padding: 4px 8px;
+      background: rgba(34, 197, 94, 0.05);
+      border-radius: 6px;
+      border: 1px solid rgba(34, 197, 94, 0.1);
+      transition: all 0.2s ease;
+    }
+
+    .footer .footer-item.highlight {
+      background: rgba(34, 197, 94, 0.1);
+      border-color: rgba(34, 197, 94, 0.2);
+      color: #86efac;
+    }
+
+    /* 로딩 오버레이 */
+    .loading-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(12, 15, 23, 0.95);
+      backdrop-filter: blur(20px);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      color: #cbd5e1;
+      font-size: 1.2rem;
+      z-index: 9999;
+    }
+
+    .loading-overlay.hidden {
+      display: none;
+    }
+
+    .spinner {
+      width: 50px;
+      height: 50px;
+      border: 3px solid rgba(59, 130, 246, 0.2);
+      border-top: 3px solid rgba(59, 130, 246, 0.6);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 1rem;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    /* 스크롤바 스타일링 */
+    ::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: rgba(15, 23, 42, 0.5);
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: rgba(59, 130, 246, 0.2);
+      border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(59, 130, 246, 0.3);
+    }
+
+    /* 반응형 디자인 */
+    @media (max-width: 768px) {
+      body {
+        grid-template-areas: 
+          "header"
+          "main"
+          "sidebar"
+          "footer";
+        grid-template-columns: 1fr;
+        grid-template-rows: 80px 1fr 200px 60px;
+      }
+      
+      .header::after,
+      .sidebar::after,
+      .main::after,
+      .footer::after {
+        display: none;
+      }
+      
+      .count-number {
+        font-size: 3rem;
+      }
+      
+      .metrics-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .header .stats {
+        gap: 1rem;
+      }
+
+      .sidebar {
+        padding: 1rem;
+      }
+
+      .main {
+        padding: 1rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="loading-overlay" class="loading-overlay">
+    <div class="spinner"></div>
+    <div>프레임워크 로딩 중...</div>
+  </div>
+
+  <!-- React 헤더 -->
+  <header id="react-header" class="header">
+    <h1>🚀 Gaesup-State Neon Demo</h1>
+    <div class="stats">
+      <div class="stat">
+        <div class="stat-value" id="header-count">0</div>
+        <div class="stat-label">Count</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value" id="header-calls">0</div>
+        <div class="stat-label">Function Calls</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value" id="header-memory">0KB</div>
+        <div class="stat-label">Memory</div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Angular 사이드바 -->
+  <aside id="angular-sidebar" class="sidebar">
+    <h2>컨트롤 패널</h2>
+    
+    <div class="control-group">
+      <h3>🎛️ 전역 컨트롤</h3>
+      <button id="btn-sync" class="control-btn">🔄 강제 동기화</button>
+      <button id="btn-reset-all" class="control-btn">🗑️ 모든 상태 리셋</button>
+      <button id="btn-metrics" class="control-btn">📊 메트릭스 보기</button>
+    </div>
+
+    <div class="control-group">
+      <h3>⚙️ 시스템 정보</h3>
+      <div class="info-panel">
+        <div class="info-item">
+          <strong>구현체:</strong> <span id="sidebar-implementation">로딩 중...</span>
+        </div>
+        <div class="info-item">
+          <strong>컨테이너 ID:</strong> <span id="sidebar-container-id">N/A</span>
+        </div>
+        <div class="info-item">
+          <strong>초기화:</strong> <span id="sidebar-initialized">진행 중</span>
+        </div>
+        <div class="info-item">
+          <strong>활성 프레임워크:</strong> <span id="sidebar-frameworks">4</span>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Svelte 메인 콘텐츠 -->
+  <main id="svelte-main" class="main">
+    <h2>상태 관리 데모</h2>
+    
+    <div class="counter-section">
+      <div class="counter-display">
+        <div class="count-number" id="main-count">0</div>
+        <div class="count-meta">
+          마지막 업데이트: <span id="main-last-updated">N/A</span>
+        </div>
+      </div>
+
+      <div class="counter-controls">
+        <button id="btn-increment" class="btn btn-primary">+1</button>
+        <button id="btn-decrement" class="btn btn-secondary">-1</button>
+        <button id="btn-reset" class="btn btn-danger">Reset</button>
+      </div>
+
+      <div class="metrics-grid">
+        <div class="metric-card">
+          <h4>메모리 사용량</h4>
+          <div class="metric-value" id="metric-memory">0KB</div>
+        </div>
+        <div class="metric-card">
+          <h4>함수 호출 수</h4>
+          <div class="metric-value" id="metric-calls">0</div>
+        </div>
+        <div class="metric-card">
+          <h4>평균 실행 시간</h4>
+          <div class="metric-value" id="metric-time">0ms</div>
+        </div>
+        <div class="metric-card">
+          <h4>업타임</h4>
+          <div class="metric-value" id="metric-uptime">0s</div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Vue 푸터 -->
+  <footer id="vue-footer" class="footer">
+    <div class="footer-left">
+      <div class="status-indicator" id="status-indicator"></div>
+      <span class="status-text" id="footer-status">🚀 시스템 실행 중</span>
+    </div>
+    <div class="footer-right">
+      <div class="footer-item">v1.0.0</div>
+      <div class="footer-item" id="footer-timestamp">--:--:--</div>
+      <div class="footer-item" id="footer-performance">0ms</div>
+      <div class="footer-item" id="footer-operations">작업: 0</div>
+    </div>
+  </footer>
+
+  <!-- 프레임워크 스크립트들 -->
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html> 

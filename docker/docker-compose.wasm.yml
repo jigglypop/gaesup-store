@@ -1,0 +1,122 @@
+version: '3.8'
+
+# Gaesup-State WASM 컨테이너 오케스트레이션
+services:
+  # WASM 컨테이너 레지스트리
+  registry:
+    image: gaesup/container-registry:latest
+    ports:
+      - "5000:5000"
+    environment:
+      - REGISTRY_STORAGE=filesystem
+      - REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY=/var/lib/registry
+    volumes:
+      - registry-data:/var/lib/registry
+    networks:
+      - gaesup-network
+
+  # Todo 앱 WASM 컨테이너
+  todo-wasm:
+    build:
+      context: ../examples/wasm-containers/todo
+      dockerfile: Dockerfile.wasm
+      platforms:
+        - wasi/wasm
+    runtime: io.containerd.wasmedge.v1
+    platform: wasi/wasm
+    environment:
+      - GAESUP_RUNTIME=wasmedge
+      - GAESUP_MAX_MEMORY=50MB
+      - GAESUP_DEBUG=true
+    networks:
+      - gaesup-network
+    depends_on:
+      - registry
+
+  # 카운터 WASM 컨테이너
+  counter-wasm:
+    build:
+      context: ../examples/wasm-containers/counter
+      dockerfile: Dockerfile.wasm
+      platforms:
+        - wasi/wasm
+    runtime: io.containerd.wasmtime.v1
+    platform: wasi/wasm
+    environment:
+      - GAESUP_RUNTIME=wasmtime
+      - GAESUP_MAX_MEMORY=20MB
+    networks:
+      - gaesup-network
+
+  # 벤치마크 WASM 컨테이너
+  benchmark-wasm:
+    build:
+      context: ../examples/wasm-containers/benchmark
+      dockerfile: Dockerfile.wasm
+      platforms:
+        - wasi/wasm
+    runtime: io.containerd.wasmer.v1
+    platform: wasi/wasm
+    environment:
+      - GAESUP_RUNTIME=wasmer
+      - GAESUP_MAX_MEMORY=200MB
+    networks:
+      - gaesup-network
+
+  # 프론트엔드 개발 서버
+  frontend:
+    build:
+      context: ../examples/todo-app
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3000:3000"
+    environment:
+      - VITE_GAESUP_REGISTRY=http://registry:5000
+      - VITE_WASM_CONTAINERS=todo-wasm:latest,counter-wasm:latest,benchmark-wasm:latest
+    volumes:
+      - ../examples/todo-app/src:/app/src
+    networks:
+      - gaesup-network
+    depends_on:
+      - registry
+      - todo-wasm
+      - counter-wasm
+      - benchmark-wasm
+
+  # 모니터링 대시보드
+  monitoring:
+    image: gaesup/monitoring-dashboard:latest
+    ports:
+      - "8080:8080"
+    environment:
+      - GAESUP_REGISTRY_URL=http://registry:5000
+    networks:
+      - gaesup-network
+    depends_on:
+      - registry
+
+networks:
+  gaesup-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  registry-data:
+    driver: local
+
+# WASM 런타임 설정
+x-wasm-runtime-config: &wasm-runtime
+  security:
+    - no-new-privileges:true
+  read_only: true
+  tmpfs:
+    - /tmp:noexec,nosuid,size=10m
+  ulimits:
+    memlock:
+      soft: 67108864  # 64MB
+      hard: 67108864
+    nofile:
+      soft: 1024
+      hard: 1024 

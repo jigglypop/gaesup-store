@@ -1,0 +1,116 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable", "WebWorker"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "allowJs": true,
+    "checkJs": false,
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+
+    /* Linting */
+    "strict": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noFallthroughCasesInSwitch": true,
+
+    /* 프레임워크 지원 */
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "useDefineForClassFields": true,
+
+    /* Angular 지원 */
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+
+    /* 경로 매핑 */
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"],
+      "@components/*": ["src/components/*"],
+      "@shared/*": ["src/shared/*"],
+      "@utils/*": ["src/utils/*"],
+      
+      /* 워크스페이스 패키지 */
+      "@gaesup-state/core": ["../../packages/core/src"],
+      "@gaesup-state/core/*": ["../../packages/core/src/*"],
+      "@gaesup-state/adapter": ["../../packages/adapter/src"],
+      "@gaesup-state/adapter/*": ["../../packages/adapter/src/*"],
+      "@gaesup-state/react": ["../../packages/frameworks/react/src"],
+      "@gaesup-state/react/*": ["../../packages/frameworks/react/src/*"],
+      "@gaesup-state/vue": ["../../packages/frameworks/vue/src"],
+      "@gaesup-state/vue/*": ["../../packages/frameworks/vue/src/*"],
+      "@gaesup-state/svelte": ["../../packages/frameworks/svelte/src"],
+      "@gaesup-state/svelte/*": ["../../packages/frameworks/svelte/src/*"],
+      "@gaesup-state/angular": ["../../packages/frameworks/angular/src"],
+      "@gaesup-state/angular/*": ["../../packages/frameworks/angular/src/*"]
+    },
+
+    /* 타입 정의 */
+    "types": [
+      "vite/client",
+      "node",
+      "webassembly-js-api",
+      "@types/react",
+      "@types/react-dom"
+    ],
+
+    /* 고급 옵션 */
+    "verbatimModuleSyntax": false,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": true,
+    "outDir": "./dist",
+    "removeComments": false,
+    "importHelpers": true,
+    "downlevelIteration": true
+  },
+  
+  "include": [
+    "src/**/*",
+    "vite.config.ts",
+    "*.config.ts",
+    "../../packages/*/src/**/*"
+  ],
+  
+  "exclude": [
+    "node_modules",
+    "dist",
+    "**/*.spec.ts",
+    "**/*.test.ts"
+  ],
+
+  "references": [
+    {
+      "path": "../../packages/core"
+    },
+    {
+      "path": "../../packages/adapter"
+    },
+    {
+      "path": "../../packages/frameworks/react"
+    },
+    {
+      "path": "../../packages/frameworks/vue"
+    },
+    {
+      "path": "../../packages/frameworks/svelte"
+    },
+    {
+      "path": "../../packages/frameworks/angular"
+    }
+  ],
+
+  "ts-node": {
+    "esm": true,
+    "experimentalSpecifierResolution": "node"
+  }
+} 

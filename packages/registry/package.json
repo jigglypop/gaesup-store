@@ -1,0 +1,58 @@
+{
+  "name": "@gaesup-state/registry",
+  "version": "1.0.0",
+  "description": "WASM 컨테이너 레지스트리 서버",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.esm.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "gaesup-registry": "./bin/registry-server.js"
+  },
+  "files": [
+    "dist",
+    "bin",
+    "public"
+  ],
+  "scripts": {
+    "build": "vite build && tsc --emitDeclarationOnly",
+    "dev": "vite build --watch & node dist/server.js",
+    "start": "node dist/server.js",
+    "test": "vitest",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@gaesup-state/core": "workspace:^",
+    "fastify": "^4.24.0",
+    "fastify-cors": "^6.1.0",
+    "fastify-static": "^4.7.0",
+    "fastify-multipart": "^7.6.0",
+    "@fastify/helmet": "^11.1.0",
+    "@fastify/rate-limit": "^8.0.0",
+    "better-sqlite3": "^9.1.0",
+    "minio": "^7.1.0",
+    "pino": "^8.17.0",
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.0",
+    "vite": "^5.0.0",
+    "vitest": "^1.0.0",
+    "@types/node": "^20.0.0",
+    "eslint": "^8.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gaesup/gaesup-state.git",
+    "directory": "packages/registry"
+  },
+  "license": "MIT",
+  "keywords": [
+    "wasm",
+    "container",
+    "registry",
+    "server",
+    "api"
+  ]
+} 

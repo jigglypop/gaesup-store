@@ -1,0 +1,58 @@
+{
+  "name": "@gaesup-state/multi-framework-demo",
+  "version": "1.0.0",
+  "description": "4개 프레임워크가 동시에 동작하는 WASM 컨테이너 데모",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "npm run build:frameworks && vite build",
+    "build:frameworks": "npm run build:react && npm run build:vue && npm run build:svelte && npm run build:angular",
+    "build:react": "vite build --config vite.react.config.ts",
+    "build:vue": "vite build --config vite.vue.config.ts", 
+    "build:svelte": "vite build --config vite.svelte.config.ts",
+    "build:angular": "ng build --configuration production",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --ext ts,tsx,vue,svelte",
+    "clean": "rm -rf dist node_modules"
+  },
+  "dependencies": {
+    "@gaesup-state/core": "workspace:*",
+    "@gaesup-state/adapter": "workspace:*",
+    "@gaesup-state/react": "workspace:*",
+    "@gaesup-state/vue": "workspace:*",
+    "@gaesup-state/svelte": "workspace:*",
+    "@gaesup-state/angular": "workspace:*"
+  },
+  "devDependencies": {
+    "@angular/animations": "^17.0.0",
+    "@angular/common": "^17.0.0",
+    "@angular/compiler": "^17.0.0",
+    "@angular/core": "^17.0.0",
+    "@angular/platform-browser": "^17.0.0",
+    "@angular/platform-browser-dynamic": "^17.0.0",
+    "@angular/cli": "^17.0.0",
+    "@angular/compiler-cli": "^17.0.0",
+    "@types/react": "^18.2.43",
+    "@types/react-dom": "^18.2.17",
+    "@vitejs/plugin-react": "^4.2.0",
+    "@vitejs/plugin-vue": "^4.5.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "vue": "^3.3.8",
+    "svelte": "^4.2.7",
+    "@sveltejs/vite-plugin-svelte": "^3.0.0",
+    "typescript": "^5.3.0",
+    "vite": "^5.0.0",
+    "vite-plugin-dts": "^3.6.0",
+    "rxjs": "^7.8.1",
+    "zone.js": "^0.14.0"
+  },
+  "peerDependencies": {
+    "react": ">=18.0.0",
+    "react-dom": ">=18.0.0", 
+    "vue": ">=3.0.0",
+    "svelte": ">=4.0.0",
+    "@angular/core": ">=17.0.0"
+  }
+} 

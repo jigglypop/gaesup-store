@@ -1,0 +1,94 @@
+[package]
+name = "gaesup-state-core"
+version = "0.2.0"
+edition = "2021"
+description = "High-performance WASM container runtime for frontend state management"
+license = "MIT"
+repository = "https://github.com/gaesup/gaesup-state"
+keywords = ["wasm", "webassembly", "container", "state-management", "performance"]
+categories = ["wasm", "web-programming"]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# WASM 바인딩 및 JavaScript 상호작용
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = [
+    "console",
+    "Window",
+    "Document",
+    "Performance",
+    "Response",
+    "Request",
+    "RequestInit",
+    "Headers",
+] }
+console_error_panic_hook = { version = "0.1", optional = true }
+
+# 직렬화 및 JSON 처리
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde-wasm-bindgen = "0.4"
+
+# 시간 처리
+chrono = { version = "0.4", features = ["wasm-bindgen"] }
+
+# UUID 생성
+uuid = { version = "1.8", features = ["v4", "js"] }
+
+# 동시성 처리
+dashmap = "5.5"
+parking_lot = "0.12"
+lazy_static = "1.4"
+crossbeam = "0.8"
+arc-swap = "1.6"
+
+# 병렬 처리 (WASM에서는 제한적)
+rayon = { version = "1.8", optional = true }
+
+# 고성능 데이터 구조
+ahash = "0.8"  # 빠른 해싱
+smallvec = "1.11"  # 작은 벡터 최적화
+indexmap = "2.1"  # 순서 보장 HashMap
+
+# 메모리 최적화
+bumpalo = "3.14"  # Arena allocator
+bytes = "1.5"  # 효율적인 바이트 처리
+
+# 로깅
+log = "0.4"
+wasm-logger = "0.2"
+getrandom = { version = "0.2", features = ["js"] }
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"
+criterion = "0.5"
+
+[profile.release]
+# 최적화 설정
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.release.package."*"]
+opt-level = 3
+overflow-checks = false
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ["-O4", "--enable-mutable-globals"]
+
+[features]
+default = ["console_error_panic_hook"]
+dev = ["console_error_panic_hook"]
+production = []
+security = []
+debug = ["console_error_panic_hook"]
+profiling = []
+threading = []
+wasm = ["console_error_panic_hook"] 
+parallel = ["rayon"] 
