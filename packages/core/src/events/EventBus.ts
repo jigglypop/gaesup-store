@@ -173,12 +173,6 @@ export class EventBus {
   // 네임스페이스 지원
   createNamespace(namespace: string): EventBus {
     const namespacedBus = new EventBus(this.debugMode)
-    
-    // 네임스페이스가 있는 이벤트로 변환
-    const originalEmit = namespacedBus.emit.bind(namespacedBus)
-    const originalOn = namespacedBus.on.bind(namespacedBus)
-    const originalOnce = namespacedBus.once.bind(namespacedBus)
-    const originalOff = namespacedBus.off.bind(namespacedBus)
 
     namespacedBus.emit = (event: string, data: any) => {
       this.emit(`${namespace}:${event}`, data)

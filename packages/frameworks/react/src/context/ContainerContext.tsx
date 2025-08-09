@@ -18,24 +18,19 @@ export function ContainerContextProvider({ config, children }: ContainerContextP
   useEffect(() => {
     let mounted = true
 
-    const initializeManager = async () => {
-      try {
-        setError(null)
-        const newManager = new ContainerManager(config)
-        
-        if (mounted) {
-          setManager(newManager)
-          setIsInitialized(true)
-        }
-      } catch (err) {
-        if (mounted) {
-          setError(err instanceof Error ? err : new Error('Failed to initialize container manager'))
-          setIsInitialized(false)
-        }
+    try {
+      setError(null)
+      const newManager = new ContainerManager(config)
+      if (mounted) {
+        setManager(newManager)
+        setIsInitialized(true)
+      }
+    } catch (err) {
+      if (mounted) {
+        setError(err instanceof Error ? err : new Error('Failed to initialize container manager'))
+        setIsInitialized(false)
       }
     }
-
-    initializeManager()
 
     return () => {
       mounted = false
@@ -47,24 +42,22 @@ export function ContainerContextProvider({ config, children }: ContainerContextP
 
   // 설정 변경 시 매니저 재생성
   useEffect(() => {
-    if (manager && isInitialized) {
-      const shouldReinitialize = hasConfigChanged(manager.config, config)
-      
-      if (shouldReinitialize) {
-        setIsInitialized(false)
-        manager.cleanup().then(() => {
-          const newManager = new ContainerManager(config)
-          setManager(newManager)
-          setIsInitialized(true)
-        }).catch(setError)
-      }
+    if (!manager) return
+    const shouldReinitialize = hasConfigChanged((manager as any).config ?? {}, config)
+    if (shouldReinitialize) {
+      setIsInitialized(false)
+      manager.cleanup().then(() => {
+        const newManager = new ContainerManager(config)
+        setManager(newManager)
+        setIsInitialized(true)
+      }).catch(setError)
     }
-  }, [config, manager, isInitialized])
+  }, [config, manager])
 
   const contextValue: ContainerContextValue = {
     manager,
     config,
-    isInitialized,
+    isInitialized: !!manager && isInitialized,
     error
   }
 

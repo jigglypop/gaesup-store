@@ -4,6 +4,9 @@ export { useContainerManager } from './composables/useContainerManager'
 export { useContainerMetrics } from './composables/useContainerMetrics'
 export { useContainerEvents } from './composables/useContainerEvents'
 
+// 🚀 통합 패턴 (Vue 전용 래퍼)  
+export { useUnifiedGaesup, useGaesupState, useGaesupBatch, useGaesupWatcher } from './composables/useUnifiedGaesup'
+
 // Plugin
 export { GaesupStatePlugin } from './plugin/GaesupStatePlugin'
 

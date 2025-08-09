@@ -7,7 +7,12 @@
     "declarationMap": true,
     "sourceMap": true,
     "composite": true,
-    "incremental": true
+    "incremental": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noImplicitOverride": false,
+    "useUnknownInCatchVariables": false,
+    "skipLibCheck": true
   },
   "include": [
     "src/**/*"

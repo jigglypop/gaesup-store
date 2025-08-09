@@ -34,7 +34,7 @@ export class MiddlewareManager {
     }
     
     const api: MiddlewareAPI = {
-      getState: () => GaesupCore.select(storeId, ''),
+      getState: () => GaesupCore.select(''),
       dispatch: (action: Action) => this.enhancedDispatch(storeId, action)
     };
     
@@ -44,7 +44,7 @@ export class MiddlewareManager {
   
   // 향상된 dispatch (미들웨어 적용)
   private enhancedDispatch(storeId: string, action: Action): any {
-    return GaesupCore.dispatch(storeId, action.type, action.payload);
+    return GaesupCore.dispatch(action.type, action.payload);
   }
 }
 

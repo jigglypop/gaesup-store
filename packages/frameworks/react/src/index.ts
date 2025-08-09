@@ -1,13 +1,8 @@
 // Hooks
 export { useContainerState } from './hooks/useContainerState'
-export { useContainerRegistry } from './hooks/useContainerRegistry'
-export { useContainerMetrics } from './hooks/useContainerMetrics'
-export { useContainerEvents } from './hooks/useContainerEvents'
-export { useContainerManager } from './hooks/useContainerManager'
 
 // Provider Components
 export { ContainerProvider } from './components/ContainerProvider'
-export { ContainerSuspense } from './components/ContainerSuspense'
 export { ContainerErrorBoundary } from './components/ContainerErrorBoundary'
 
 // Context
@@ -26,6 +21,9 @@ export type {
 
 // Utilities
 export { createContainer, validateContainer } from './utils'
+
+// 🚀 통합 패턴 (React 전용 래퍼)
+export { useUnifiedGaesup, useGaesupBatch } from './hooks/useUnifiedGaesup'
 
 // Version
 export const VERSION = '1.0.0' 

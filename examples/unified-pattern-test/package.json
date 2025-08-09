@@ -1,0 +1,14 @@
+{
+  "name": "unified-pattern-test",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "test": "node src/test.js"
+  },
+  "dependencies": {
+    "@gaesup-state/core": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.2"
+  }
+} 

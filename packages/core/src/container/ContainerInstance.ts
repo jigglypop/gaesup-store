@@ -1,10 +1,13 @@
-import type { 
+import type {
   ContainerConfig,
   ContainerMetrics,
-  IsolationPolicy 
+  StateCallback,
+  Unsubscribe,
+  MemoryUsage,
+  HealthStatus
 } from '../types'
 import { ContainerStatus } from '../types'
-import { ContainerError } from '../errors'
+import { ContainerTimeoutError, ContainerMemoryError, ContainerSecurityError } from '../errors'
 import { EventBus } from '../events/EventBus'
 
 export class ContainerInstance {
@@ -76,11 +79,17 @@ export class ContainerInstance {
       // WASM 인스턴스 초기화
       this._status = ContainerStatus.RUNNING
       this.eventBus.emit('container:start', { containerId: this.id })
+      // 초기 상태 이벤트 전파
+      this.eventBus.emit('state:change', {
+        containerId: this.id,
+        state: this._state,
+        previousState: undefined
+      })
     } catch (error) {
       this._status = ContainerStatus.ERROR
       this._metrics.errorCount++
       this.eventBus.emit('container:error', { containerId: this.id, error })
-      throw error
+      throw (error instanceof Error ? error : new Error(String(error)))
     }
   }
 
@@ -126,7 +135,7 @@ export class ContainerInstance {
     } catch (error) {
       this._metrics.errorCount++
       this.eventBus.emit('container:error', { containerId: this.id, error })
-      throw error
+      throw (error instanceof Error ? error : new Error(String(error)))
     } finally {
       const duration = performance.now() - startTime
       this.updateCpuMetrics(duration)
@@ -204,7 +213,159 @@ export class ContainerInstance {
       this._status = ContainerStatus.STOPPED
     } catch (error) {
       this._status = ContainerStatus.ERROR
-      throw error
+      throw (error instanceof Error ? error : new Error(String(error)))
+    }
+  }
+
+  // 새로 추가: 컨테이너 재시작 기능
+  async restart(): Promise<void> {
+    console.log(`🔄 Restarting container: ${this.id}`)
+    
+    try {
+      // 1. 현재 상태 저장
+      const currentState = { ...this._state }
+      
+      // 2. 컨테이너 중지
+      await this.stop()
+      
+      // 3. 잠시 대기 (리소스 정리 시간)
+      await new Promise(resolve => setTimeout(resolve, 100))
+      
+      // 4. 컨테이너 재시작
+      this._status = ContainerStatus.STARTING
+      this.initializeInstance()
+      
+      // 5. 상태 복원
+      await this.updateState(currentState)
+      
+      // 6. 재시작 이벤트 발행
+      this.eventBus.emit('container:restart', { 
+        containerId: this.id,
+        restoredState: currentState 
+      })
+      
+      console.log(`✅ Container restarted: ${this.id}`)
+    } catch (error) {
+      this._status = ContainerStatus.ERROR
+      this.eventBus.emit('container:error', { containerId: this.id, error })
+      const message = error instanceof Error ? error.message : String(error)
+      throw new Error(`Failed to restart container ${this.id}: ${message}`)
+    }
+  }
+
+  // 새로 추가: 핫 리로드 (상태 유지하며 코드만 새로고침)
+  async hotReload(newWasmModule: WebAssembly.Module): Promise<void> {
+    console.log(`🔥 Hot reloading container: ${this.id}`)
+    
+    try {
+      const currentState = { ...this._state }
+      const wasRunning = this._status === ContainerStatus.RUNNING
+      
+      // 새로운 WASM 모듈로 인스턴스 재생성
+      const newInstance = await this.createNewInstance(newWasmModule)
+      
+      // 기존 인스턴스 교체
+      Object.defineProperty(this, 'wasmInstance', {
+        value: newInstance,
+        writable: false
+      })
+      
+      if (wasRunning) {
+        this._status = ContainerStatus.RUNNING
+        await this.updateState(currentState)
+      }
+      
+      this.eventBus.emit('container:hotreload', { 
+        containerId: this.id,
+        preservedState: currentState 
+      })
+      
+      console.log(`🔥 Hot reload completed: ${this.id}`)
+    } catch (error) {
+      this._status = ContainerStatus.ERROR
+      const message = error instanceof Error ? error.message : String(error)
+      throw new Error(`Hot reload failed for ${this.id}: ${message}`)
+    }
+  }
+
+  // 새로 추가: 도커 컨테이너로 배포
+  async deployToDocker(): Promise<string> {
+    console.log(`🐳 Deploying container to Docker: ${this.id}`)
+    
+    try {
+      const dockerConfig = {
+        image: `gaesup/${this.name}:${this.version}`,
+        runtime: this.getDockerRuntime(),
+        environment: {
+          GAESUP_CONTAINER_ID: this.id,
+          GAESUP_MAX_MEMORY: `${this.config.maxMemory || 50 * 1024 * 1024}B`,
+          GAESUP_ISOLATION: JSON.stringify(this.config.isolation),
+          ...this.config.environment
+        },
+        labels: {
+          'gaesup.container.id': this.id,
+          'gaesup.container.name': this.name,
+          'gaesup.container.version': this.version,
+          'gaesup.created': new Date().toISOString()
+        }
+      }
+      
+      // 도커 API 호출 (실제로는 Docker daemon과 통신)
+      const dockerContainerId = await this.callDockerAPI('create', dockerConfig)
+      
+      // 컨테이너 시작
+      await this.callDockerAPI('start', { id: dockerContainerId })
+      
+      this.eventBus.emit('container:deployed', { 
+        containerId: this.id,
+        dockerContainerId,
+        config: dockerConfig 
+      })
+      
+      return dockerContainerId
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      throw new Error(`Docker deployment failed for ${this.id}: ${message}`)
+    }
+  }
+
+  // 새로 추가: 컨테이너 스케일링
+  async scale(replicas: number): Promise<string[]> {
+    console.log(`📈 Scaling container ${this.id} to ${replicas} replicas`)
+    
+    const replicaIds: string[] = []
+    
+    try {
+      for (let i = 0; i < replicas; i++) {
+        const replicaId = `${this.id}-replica-${i}`
+        
+        // 복제본 생성
+        const replica = new ContainerInstance(
+          replicaId,
+          this.name,
+          this.version,
+          this.wasmModule,
+          await this.createNewInstance(this.wasmModule),
+          { ...this.config },
+          this.eventBus
+        )
+        
+        // 동일한 상태로 초기화
+        await replica.updateState(this._state)
+        
+        replicaIds.push(replicaId)
+      }
+      
+      this.eventBus.emit('container:scaled', { 
+        originalId: this.id,
+        replicas: replicaIds,
+        count: replicas 
+      })
+      
+      return replicaIds
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      throw new Error(`Scaling failed for ${this.id}: ${message}`)
     }
   }
 
@@ -237,7 +398,7 @@ export class ContainerInstance {
       return {
         healthy: false,
         lastCheck,
-        details: { error: error.message }
+        details: { error: (error instanceof Error ? error.message : String(error)) }
       }
     }
   }
@@ -257,7 +418,7 @@ export class ContainerInstance {
         resolve(result)
       } catch (error) {
         clearTimeout(timeoutId)
-        reject(error)
+        reject(error instanceof Error ? error : new Error(String(error)))
       }
     })
   }
@@ -320,5 +481,39 @@ export class ContainerInstance {
         usage: this._metrics.cpuUsage
       })
     }
+  }
+
+  private async createNewInstance(module: WebAssembly.Module): Promise<WebAssembly.Instance> {
+    // RuntimeFactory 사용해서 새 인스턴스 생성
+    const runtime = this.config.runtime || 'browser'
+    void runtime
+    // 실제로는 RuntimeFactory 인젝션 필요
+    return await WebAssembly.instantiate(module)
+  }
+
+  private getDockerRuntime(): string {
+    switch (this.config.runtime) {
+      case 'wasmedge': return 'io.containerd.wasmedge.v1'
+      case 'wasmtime': return 'io.containerd.wasmtime.v1'
+      case 'wasmer': return 'io.containerd.wasmer.v1'
+      default: return 'io.containerd.wasm.v1'
+    }
+  }
+
+  private async callDockerAPI(action: string, params: any): Promise<string> {
+    // 실제 구현에서는 Docker Engine API 호출
+    // 현재는 Mock 구현
+    const response = await fetch(`/docker/${action}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params)
+    })
+    
+    if (!response.ok) {
+      throw new Error(`Docker API ${action} failed: ${response.statusText}`)
+    }
+    
+    const result = await response.json()
+    return result.id || result.containerId
   }
 } 

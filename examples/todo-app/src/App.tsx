@@ -1,19 +1,19 @@
-import React from 'react'
+import React, { useMemo } from 'react'
 import { ContainerProvider } from '@gaesup-state/react'
 import TodoApp from './components/TodoApp'
 import Counter from './components/Counter'
 import PerformanceBenchmark from './components/PerformanceBenchmark'
 
 function App() {
+  const providerConfig = useMemo(() => ({
+    registry: 'https://registry.gaesup.dev',
+    maxContainers: 5,
+    debugMode: true,
+    enableMetrics: true
+  }), [])
+
   return (
-    <ContainerProvider
-      config={{
-        registry: 'https://registry.gaesup.dev',
-        maxContainers: 5,
-        debugMode: true,
-        enableMetrics: true
-      }}
-    >
+    <ContainerProvider config={providerConfig}>
       <div className="app">
         <header className="app-header">
           <h1>🚀 Gaesup-State Demo</h1>

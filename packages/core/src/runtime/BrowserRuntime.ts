@@ -26,7 +26,8 @@ export class BrowserRuntime extends WASMRuntime {
       this.setupBrowserOptimizations(instance)
       return instance
     } catch (error) {
-      throw new Error(`Failed to instantiate WASM module in browser: ${error.message}`)
+      const message = error instanceof Error ? error.message : String(error)
+      throw new Error(`Failed to instantiate WASM module in browser: ${message}`)
     }
   }
 
@@ -158,7 +159,7 @@ export class BrowserRuntime extends WASMRuntime {
     }
   }
 
-  getOptimizationHints() {
+  override getOptimizationHints() {
     return {
       ...super.getOptimizationHints(),
       supportsBulkMemory: this.checkBulkMemorySupport(),
@@ -170,8 +171,8 @@ export class BrowserRuntime extends WASMRuntime {
 
   private checkBulkMemorySupport(): boolean {
     try {
-      // Bulk memory operations 지원 확인
-      return typeof WebAssembly.Memory.prototype.fill === 'function'
+      // Bulk memory operations 지원 확인 (보수적으로 false 반환)
+      return false
     } catch {
       return false
     }
@@ -187,7 +188,7 @@ export class BrowserRuntime extends WASMRuntime {
     }
   }
 
-  protected getPerformanceHints() {
+  protected override getPerformanceHints() {
     return {
       ...super.getPerformanceHints(),
       preferredCompilationTier: 'optimized' as const, // 브라우저는 최적화된 컴파일 선호

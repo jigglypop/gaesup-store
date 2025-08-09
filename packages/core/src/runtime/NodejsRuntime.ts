@@ -26,7 +26,8 @@ export class NodejsRuntime extends WASMRuntime {
       this.setupNodejsOptimizations(instance)
       return instance
     } catch (error) {
-      throw new Error(`Failed to instantiate WASM module in Node.js: ${error.message}`)
+      const message = error instanceof Error ? error.message : String(error)
+      throw new Error(`Failed to instantiate WASM module in Node.js: ${message}`)
     }
   }
 
@@ -222,7 +223,7 @@ export class NodejsRuntime extends WASMRuntime {
     }, 5000) // 5초마다 체크
   }
 
-  getOptimizationHints() {
+  override getOptimizationHints() {
     return {
       ...super.getOptimizationHints(),
       supportsBulkMemory: this.checkBulkMemorySupport(),
@@ -251,7 +252,7 @@ export class NodejsRuntime extends WASMRuntime {
     }
   }
 
-  protected getPerformanceHints() {
+  protected override getPerformanceHints() {
     return {
       ...super.getPerformanceHints(),
       preferredCompilationTier: 'optimized' as const,

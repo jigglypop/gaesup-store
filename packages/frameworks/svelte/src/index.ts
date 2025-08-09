@@ -3,6 +3,14 @@ export { createContainerStore } from './stores/containerStore'
 export { createContainerManagerStore } from './stores/managerStore'
 export { createContainerMetricsStore } from './stores/metricsStore'
 
+// 🚀 통합 패턴 (Svelte 전용 래퍼)
+export { 
+  createUnifiedGaesupStore, 
+  createGaesupState, 
+  createGaesupBatchStore, 
+  createDerivedGaesupStore 
+} from './stores/unifiedGaesupStore'
+
 // Actions
 export { container } from './actions/container'
 export { metrics } from './actions/metrics'

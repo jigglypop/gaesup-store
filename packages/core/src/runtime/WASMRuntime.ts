@@ -8,7 +8,7 @@ export abstract class WASMRuntime {
   }
 
   abstract isAvailable(): boolean
-  abstract async instantiate(module: WebAssembly.Module): Promise<WebAssembly.Instance>
+  abstract instantiate(module: WebAssembly.Module): Promise<WebAssembly.Instance>
   
   // 런타임별 최적화 힌트
   getOptimizationHints(): OptimizationHints {

@@ -32,9 +32,8 @@ export class ContainerManager {
     this.eventBus = new EventBus(this.config.debugMode)
     this.runtimeFactory = new RuntimeFactory()
 
-    if (this.config.debugMode) {
-      console.log('[ContainerManager] Initialized with config:', this.config)
-    }
+    // 항상 한 번만 초기화 로그
+    console.log('[ContainerManager] Initialized with config:', this.config)
   }
 
   async run(name: string, config: ContainerConfig = {}): Promise<ContainerInstance> {
@@ -50,9 +49,11 @@ export class ContainerManager {
       if (this.config.debugMode) {
         console.log(`[ContainerManager] Starting container: ${name} (ID: ${containerId})`)
       }
-
-      // WASM 모듈 로드 또는 캐시에서 가져오기
-      const wasmModule = await this.loadWASMModule(name, config)
+      // Mock 모드에서는 네트워크 로드/컴파일을 건너뛴다
+      const isMock = config.environment?.GAESUP_MOCK === 'true'
+      const wasmModule: WebAssembly.Module = isMock
+        ? ({} as unknown as WebAssembly.Module)
+        : await this.loadWASMModule(name, config)
       
       // 런타임 선택 및 인스턴스 생성
       const runtime = config.runtime || this.config.defaultRuntime
@@ -91,7 +92,8 @@ export class ContainerManager {
       return container
 
     } catch (error) {
-      const errorMessage = `Failed to start container ${name}: ${error.message}`
+      const message = error instanceof Error ? error.message : String(error)
+      const errorMessage = `Failed to start container ${name}: ${message}`
       
       if (this.config.debugMode) {
         console.error(`[ContainerManager] ${errorMessage}`, error)
@@ -123,8 +125,216 @@ export class ContainerManager {
 
     } catch (error) {
       console.error(`[ContainerManager] Error stopping container ${containerId}:`, error)
-      throw error
+      throw (error instanceof Error ? error : new Error(String(error)))
     }
+  }
+
+  // 새로 추가: 컨테이너 재시작
+  async restart(containerId: ContainerID): Promise<ContainerInstance> {
+    const container = this.containers.get(containerId)
+    
+    if (!container) {
+      throw new ContainerNotFoundError(containerId)
+    }
+
+    try {
+      if (this.config.debugMode) {
+        console.log(`[ContainerManager] Restarting container: ${containerId}`)
+      }
+
+      await container.restart()
+
+      this.eventBus.emit('manager:container_restarted', {
+        containerId,
+        name: container.name,
+        timestamp: new Date()
+      })
+
+      return container
+    } catch (error) {
+      console.error(`[ContainerManager] Error restarting container ${containerId}:`, error)
+      throw (error instanceof Error ? error : new Error(String(error)))
+    }
+  }
+
+  // 새로 추가: 핫 리로드 (개발 모드용)
+  async hotReload(containerId: ContainerID): Promise<ContainerInstance> {
+    const container = this.containers.get(containerId)
+    
+    if (!container) {
+      throw new ContainerNotFoundError(containerId)
+    }
+
+    try {
+      if (this.config.debugMode) {
+        console.log(`[ContainerManager] Hot reloading container: ${containerId}`)
+      }
+
+      // 최신 WASM 모듈 다운로드
+      const newWasmModule = await this.loadWASMModule(container.name, container['config'])
+      
+      await container.hotReload(newWasmModule)
+
+      this.eventBus.emit('manager:container_hotreloaded', {
+        containerId,
+        name: container.name,
+        timestamp: new Date()
+      })
+
+      if (this.config.debugMode) {
+        console.log(`[ContainerManager] Hot reload completed: ${containerId}`)
+      }
+
+      return container
+    } catch (error) {
+      console.error(`[ContainerManager] Error hot reloading container ${containerId}:`, error)
+      throw (error instanceof Error ? error : new Error(String(error)))
+    }
+  }
+
+  // 새로 추가: 도커에 배포
+  async deployToDocker(containerId: ContainerID): Promise<string> {
+    const container = this.containers.get(containerId)
+    
+    if (!container) {
+      throw new ContainerNotFoundError(containerId)
+    }
+
+    try {
+      if (this.config.debugMode) {
+        console.log(`[ContainerManager] Deploying to Docker: ${containerId}`)
+      }
+
+      const dockerContainerId = await container.deployToDocker()
+
+      this.eventBus.emit('manager:container_deployed', {
+        containerId,
+        dockerContainerId,
+        name: container.name,
+        timestamp: new Date()
+      })
+
+      return dockerContainerId
+    } catch (error) {
+      console.error(`[ContainerManager] Error deploying container ${containerId}:`, error)
+      throw (error instanceof Error ? error : new Error(String(error)))
+    }
+  }
+
+  // 새로 추가: 컨테이너 스케일링
+  async scale(containerId: ContainerID, replicas: number): Promise<string[]> {
+    const container = this.containers.get(containerId)
+    
+    if (!container) {
+      throw new ContainerNotFoundError(containerId)
+    }
+
+    if (replicas < 1) {
+      throw new Error('Replicas must be at least 1')
+    }
+
+    if (this.containers.size + replicas > this.config.maxContainers) {
+      throw new Error(`Scaling would exceed maximum containers (${this.config.maxContainers})`)
+    }
+
+    try {
+      if (this.config.debugMode) {
+        console.log(`[ContainerManager] Scaling container ${containerId} to ${replicas} replicas`)
+      }
+
+      const replicaIds = await container.scale(replicas)
+
+      // 복제본들을 매니저에 등록 (실제로는 더 복잡한 구현 필요)
+      for (const replicaId of replicaIds) {
+        // 여기서는 간단히 이벤트만 발행
+        this.eventBus.emit('manager:replica_created', {
+          originalId: containerId,
+          replicaId,
+          timestamp: new Date()
+        })
+      }
+
+      this.eventBus.emit('manager:container_scaled', {
+        containerId,
+        replicas: replicaIds,
+        count: replicas,
+        timestamp: new Date()
+      })
+
+      return replicaIds
+    } catch (error) {
+      console.error(`[ContainerManager] Error scaling container ${containerId}:`, error)
+      throw (error instanceof Error ? error : new Error(String(error)))
+    }
+  }
+
+  // 새로 추가: 모든 컨테이너 재시작
+  async restartAll(): Promise<void> {
+    if (this.config.debugMode) {
+      console.log(`[ContainerManager] Restarting all ${this.containers.size} containers`)
+    }
+
+    const restartPromises = Array.from(this.containers.keys()).map(
+      containerId => this.restart(containerId).catch(error => {
+        console.error(`Failed to restart container ${containerId}:`, error)
+        return null
+      })
+    )
+
+    const results = await Promise.allSettled(restartPromises)
+    const successCount = results.filter(r => r.status === 'fulfilled').length
+    const failCount = results.length - successCount
+
+    this.eventBus.emit('manager:bulk_restart_completed', {
+      total: results.length,
+      success: successCount,
+      failed: failCount,
+      timestamp: new Date()
+    })
+
+    if (this.config.debugMode) {
+      console.log(`[ContainerManager] Restart completed: ${successCount} success, ${failCount} failed`)
+    }
+  }
+
+  // 새로 추가: 도커 컴포즈 생성
+  generateDockerCompose(): string {
+    const services: any = {}
+    
+    this.containers.forEach((container, id) => {
+      services[id] = {
+        image: `gaesup/${container.name}:${container.version}`,
+        runtime: container['getDockerRuntime'] ? container['getDockerRuntime']() : 'io.containerd.wasm.v1',
+        platform: 'wasi/wasm',
+        environment: {
+          GAESUP_CONTAINER_ID: id,
+          GAESUP_REGISTRY: this.config.registry,
+          ...container['config']?.environment
+        },
+        networks: ['gaesup-network'],
+        restart: 'unless-stopped',
+        labels: {
+          'gaesup.managed': 'true',
+          'gaesup.container.id': id,
+          'gaesup.container.name': container.name
+        }
+      }
+    })
+
+    const compose = {
+      version: '3.8',
+      services,
+      networks: {
+        'gaesup-network': {
+          driver: 'bridge'
+        }
+      }
+    }
+
+    return `# Generated by Gaesup-State ContainerManager
+# ${new Date().toISOString()}
+
+${require('yaml').stringify(compose)}`
   }
 
   list(): ContainerInstance[] {
@@ -196,7 +406,7 @@ export class ContainerManager {
           healthChecks[id] = {
             healthy: false,
             lastCheck: new Date(),
-            error: error.message
+            error: (error instanceof Error ? error.message : String(error))
           }
         }
       }
@@ -244,9 +454,10 @@ export class ContainerManager {
     const url = `${this.config.registry}/containers/${name}`
     
     try {
-      const response = await fetch(url, {
-        timeout: this.config.networkTimeout
-      })
+      const controller = new AbortController()
+      const id = setTimeout(() => controller.abort(), this.config.networkTimeout)
+      const response = await fetch(url, { signal: controller.signal })
+      clearTimeout(id)
 
       if (!response.ok) {
         throw new Error(`Failed to download container: ${response.status} ${response.statusText}`)
@@ -255,7 +466,8 @@ export class ContainerManager {
       return await response.arrayBuffer()
 
     } catch (error) {
-      throw new Error(`Registry download failed for ${name}: ${error.message}`)
+      const message = error instanceof Error ? error.message : String(error)
+      throw new Error(`Registry download failed for ${name}: ${message}`)
     }
   }
 
@@ -264,8 +476,85 @@ export class ContainerManager {
     runtime: WASMRuntimeType,
     config: ContainerConfig
   ): Promise<WebAssembly.Instance> {
+    // 개발/데모용 모드: 실제 WASM 없이 JS 모의 인스턴스 사용
+    if (config.environment && config.environment.GAESUP_MOCK === 'true') {
+      return this.createMockInstance(config)
+    }
     const runtimeImpl = this.runtimeFactory.create(runtime, config)
     return await runtimeImpl.instantiate(module)
+  }
+
+  // JS 기반 모의 WASM 인스턴스 (데모/개발 전용)
+  private createMockInstance(config: ContainerConfig): WebAssembly.Instance {
+    // 컨테이너별 기본 상태
+    let todoState: any[] = []
+    let counterState: { count: number; lastUpdated: string; totalOperations: number } = {
+      count: 0,
+      lastUpdated: new Date().toISOString(),
+      totalOperations: 0
+    }
+
+    const exports: Record<string, any> = {
+      // Todo 컨테이너 함수들
+      addTodo: ({ title, completed = false }: { title: string; completed?: boolean }) => {
+        const id = Date.now()
+        const item = { id, title, completed, createdAt: new Date().toISOString() }
+        todoState = [...todoState, item]
+        return [...todoState]
+      },
+      toggleTodo: ({ id }: { id: number }) => {
+        todoState = todoState.map(t => (t.id === id ? { ...t, completed: !t.completed } : t))
+        return [...todoState]
+      },
+      removeTodo: ({ id }: { id: number }) => {
+        todoState = todoState.filter(t => t.id !== id)
+        return [...todoState]
+      },
+      clearCompleted: () => {
+        todoState = todoState.filter(t => !t.completed)
+        return [...todoState]
+      },
+
+      // Counter 컨테이너 함수들
+      increment: () => {
+        counterState = {
+          count: counterState.count + 1,
+          totalOperations: counterState.totalOperations + 1,
+          lastUpdated: new Date().toISOString()
+        }
+        return { ...counterState }
+      },
+      decrement: () => {
+        counterState = {
+          count: counterState.count - 1,
+          totalOperations: counterState.totalOperations + 1,
+          lastUpdated: new Date().toISOString()
+        }
+        return { ...counterState }
+      },
+      reset: () => {
+        counterState = {
+          count: 0,
+          totalOperations: counterState.totalOperations + 1,
+          lastUpdated: new Date().toISOString()
+        }
+        return { ...counterState }
+      },
+      addAmount: ({ amount }: { amount: number }) => {
+        counterState = {
+          count: counterState.count + (amount || 0),
+          totalOperations: counterState.totalOperations + 1,
+          lastUpdated: new Date().toISOString()
+        }
+        return { ...counterState }
+      },
+
+      // 필수 메모리
+      memory: new WebAssembly.Memory({ initial: 1 })
+    }
+
+    const instance = { exports } as unknown as WebAssembly.Instance
+    return instance
   }
 
   private startMetricsCollection(container: ContainerInstance): void {
@@ -296,7 +585,7 @@ export class ContainerManager {
   private getCacheSize(): number {
     let totalSize = 0
     
-    this.containerCache.forEach((module) => {
+    this.containerCache.forEach((_module) => {
       // WebAssembly.Module의 크기 추정 (실제로는 더 정확한 계산 필요)
       totalSize += 1024 * 1024 // 대략적인 크기
     })

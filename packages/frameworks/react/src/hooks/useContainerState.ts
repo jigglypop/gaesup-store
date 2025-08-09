@@ -29,15 +29,22 @@ export function useContainerState<T = any>(
 
   // 컨테이너 시작
   const startContainer = useCallback(async () => {
-    if (!manager || !isInitialized) {
+    if (!manager) {
       return
     }
+    if (container) return
 
     setIsLoading(true)
     setError(null)
 
     try {
-      const containerInstance = await manager.run(containerName, containerConfig)
+      const containerInstance = await manager.run(containerName, {
+        ...containerConfig,
+        environment: {
+          ...(containerConfig.environment || {}),
+          GAESUP_MOCK: 'true'
+        }
+      } as ContainerConfig)
       
       if (mountedRef.current) {
         setContainer(containerInstance)
@@ -82,7 +89,7 @@ export function useContainerState<T = any>(
         setIsLoading(false)
       }
     }
-  }, [manager, isInitialized, containerName, containerConfig, initialState, onStateChange, onError, retryCount, retryDelay])
+  }, [manager, containerName, containerConfig, container, initialState, onStateChange, onError, retryCount, retryDelay])
 
   // 컨테이너 중지
   const stopContainer = useCallback(async () => {
@@ -173,10 +180,10 @@ export function useContainerState<T = any>(
 
   // 컨테이너 자동 시작
   useEffect(() => {
-    if (autoStart && manager && isInitialized && !container && !isLoading) {
+    if (autoStart && manager && !container && !isLoading) {
       startContainer()
     }
-  }, [autoStart, manager, isInitialized, container, isLoading, startContainer])
+  }, [autoStart, manager, container, isLoading, startContainer])
 
   // Context 에러 처리
   useEffect(() => {

@@ -146,10 +146,10 @@ export function produceWithStore(
   storeId: string,
   recipe: (draft: any) => void | any
 ): Promise<any> {
-  const currentState = GaesupCore.select(storeId, '');
+  const currentState = GaesupCore.select('');
   const nextState = produce(currentState, recipe);
   
-  return GaesupCore.dispatch(storeId, 'SET', nextState);
+  return GaesupCore.dispatch('SET', nextState);
 }
 
 // Redux Toolkit 스타일 createSlice
@@ -204,23 +204,24 @@ export function createSlice<T>(config: SliceConfig<T>) {
     reducer,
     // Gaesup-State 통합
     createStore: async () => {
-      await GaesupCore.createStore(name, initialState);
+      await GaesupCore.initStore(initialState);
       
       // 리듀서 등록 (커스텀 액션 처리)
       const originalDispatch = GaesupCore.dispatch.bind(GaesupCore);
       
-      GaesupCore.dispatch = async (storeId: string, actionType: string, payload: any) => {
+  const originalDispatch = GaesupCore.dispatch;
+  (GaesupCore as any).dispatch = async (actionType: string, payload: any) => {
         if (storeId === name) {
-          const currentState = GaesupCore.select(storeId, '');
+          const currentState = GaesupCore.select('');
           const action = { type: actionType, payload };
           const nextState = reducer(currentState, action);
           
           if (nextState !== currentState) {
-            return originalDispatch(storeId, 'SET', nextState);
+            return originalDispatch('SET', nextState);
           }
         }
         
-        return originalDispatch(storeId, actionType, payload);
+        return originalDispatch(actionType, payload);
       };
     }
   };

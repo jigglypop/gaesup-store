@@ -110,8 +110,9 @@
       if (!('WebAssembly' in window)) {
         alert('이 브라우저는 WebAssembly를 지원하지 않습니다. 최신 브라우저를 사용해주세요.');
       }
-      
-      // 개발 환경에서 hot reload 지원
+    </script>
+    <script type="module">
+      // 개발 환경에서 hot reload 지원 (모듈 스코프에서만 사용 가능)
       if (import.meta.hot) {
         import.meta.hot.accept();
       }

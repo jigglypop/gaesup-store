@@ -22,7 +22,7 @@ export class ContainerNotFoundError extends ContainerError {
       details
     )
     this.name = 'ContainerNotFoundError'
-    this.containerId = containerId
+    ;(this as any).containerId = containerId
     Object.setPrototypeOf(this, ContainerNotFoundError.prototype)
   }
 }
@@ -35,7 +35,7 @@ export class ContainerStartupError extends ContainerError {
       details
     )
     this.name = 'ContainerStartupError'
-    this.containerId = containerId
+    ;(this as any).containerId = containerId
     Object.setPrototypeOf(this, ContainerStartupError.prototype)
   }
 }
@@ -48,7 +48,7 @@ export class ContainerMemoryError extends ContainerError {
       { memoryUsed, memoryLimit }
     )
     this.name = 'ContainerMemoryError'
-    this.containerId = containerId
+    ;(this as any).containerId = containerId
     Object.setPrototypeOf(this, ContainerMemoryError.prototype)
   }
 }
@@ -61,7 +61,7 @@ export class ContainerTimeoutError extends ContainerError {
       { operation, timeoutMs }
     )
     this.name = 'ContainerTimeoutError'
-    this.containerId = containerId
+    ;(this as any).containerId = containerId
     Object.setPrototypeOf(this, ContainerTimeoutError.prototype)
   }
 }
@@ -74,7 +74,7 @@ export class ContainerSecurityError extends ContainerError {
       { violation, ...details }
     )
     this.name = 'ContainerSecurityError'
-    this.containerId = containerId
+    ;(this as any).containerId = containerId
     Object.setPrototypeOf(this, ContainerSecurityError.prototype)
   }
 }

@@ -87,7 +87,7 @@ export function validateContainer(config: ContainerConfig): ValidationResult {
 
 export async function compileWASM(
   wasmBytes: ArrayBuffer,
-  options?: CompileOptions
+  _options?: CompileOptions
 ): Promise<WebAssembly.Module> {
   try {
     const module = await WebAssembly.compile(wasmBytes)
@@ -100,7 +100,8 @@ export async function compileWASM(
     
     return module
   } catch (error) {
-    throw new Error(`WASM compilation failed: ${error.message}`)
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(`WASM compilation failed: ${message}`)
   }
 }
 

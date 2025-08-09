@@ -250,7 +250,9 @@ async function ensureWasmInitialized(): Promise<void> {
   if (!initPromise) {
     initPromise = (async () => {
       try {
-        const wasmModule = await import('@gaesup-state/core-rust');
+        const moduleName = '@gaesup-state/core-rust';
+        // Avoid Vite pre-bundling resolution; allow runtime failure to fall back to JS mock
+        const wasmModule = await import(/* @vite-ignore */ moduleName);
         wasm = wasmModule;
         if (wasm.init) {
           wasm.init();
@@ -446,4 +448,37 @@ if (typeof window !== 'undefined' && (window as any).__REDUX_DEVTOOLS_EXTENSION_
 }
 
 // Type exports
-export type { Action, StateListener } from './types'; 
+export type { Action, StateListener } from './types';
+
+// Container and validation types
+export type { 
+  ContainerConfig, 
+  ValidationResult, 
+  ValidationError, 
+  ValidationWarning,
+  ContainerMetadata,
+  CompileOptions,
+  ContainerManagerConfig,
+  PerformanceConfig
+} from './types';
+
+// Utility functions
+export { createContainer, validateContainer, compileWASM } from './utils';
+
+// Container runtime (manager)
+export { ContainerManager } from './container/ContainerManager';
+
+// 🚀 통합 패턴 (모든 프레임워크 공통)
+export {
+  UnifiedGaesupManager,
+  createGaesupManager,
+  batchUpdate,
+  getGaesupMetrics,
+  enableDevTools
+} from './common-pattern';
+
+export type {
+  GaesupState,
+  GaesupStateActions,
+  GaesupStateManager
+} from './common-pattern'; 
