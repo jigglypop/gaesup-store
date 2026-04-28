@@ -1,5 +1,5 @@
-import { readFile, writeFile, mkdir, stat } from 'fs/promises'
-import { join, dirname, basename } from 'path'
+import { readFile, writeFile, mkdir } from 'fs/promises'
+import { join, dirname } from 'path'
 import { createHash } from 'crypto'
 import * as tar from 'tar'
 import type { ContainerManifest, BuildOptions, ContainerLayer } from '../types'
@@ -12,12 +12,26 @@ export class ContainerBuilder {
   constructor(buildContext: string) {
     this.buildContext = buildContext
     this.manifest = {
-      version: '1.0',
+      manifestVersion: '1.0',
       name: '',
+      version: 'latest',
       tag: 'latest',
       architecture: 'wasm32',
       os: 'wasi',
       created: new Date().toISOString(),
+      gaesup: {
+        abiVersion: '1.0.0'
+      },
+      permissions: {
+        network: false,
+        storage: 'none',
+        dom: false,
+        crossStore: false,
+        crossContainer: false
+      },
+      dependencies: [],
+      stores: [],
+      allowedImports: [],
       layers: [],
       config: {
         runtime: 'browser',
@@ -64,7 +78,7 @@ export class ContainerBuilder {
     try {
       await WebAssembly.compile(wasmContent)
     } catch (error) {
-      throw new Error(`Invalid WASM binary: ${error.message}`)
+      throw new Error(`Invalid WASM binary: ${getErrorMessage(error)}`)
     }
 
     const hash = this.calculateHash(wasmContent)
@@ -87,6 +101,11 @@ export class ContainerBuilder {
     })
 
     // 메인 WASM 파일로 설정
+    this.manifest.wasm = {
+      entrypoint: entrypoint || 'main',
+      sha256: hash,
+      size: wasmContent.byteLength
+    }
     this.manifest.config.entrypoint = entrypoint || 'main'
   }
 
@@ -97,7 +116,30 @@ export class ContainerBuilder {
 
   // 런타임 설정
   setRuntime(runtime: string): void {
-    this.manifest.config.runtime = runtime
+    this.manifest.runtime = runtime as any
+    this.manifest.config.runtime = runtime as any
+  }
+
+  setGaesupAbiVersion(version: string): void {
+    this.manifest.gaesup = {
+      ...this.manifest.gaesup,
+      abiVersion: version
+    }
+  }
+
+  addPackageDependency(dependency: NonNullable<ContainerManifest['dependencies']>[number]): void {
+    this.manifest.dependencies = this.manifest.dependencies || []
+    this.manifest.dependencies.push(dependency)
+  }
+
+  addStoreDependency(store: NonNullable<ContainerManifest['stores']>[number]): void {
+    this.manifest.stores = this.manifest.stores || []
+    this.manifest.stores.push(store)
+  }
+
+  setAllowedImports(imports: string[]): void {
+    this.manifest.allowedImports = imports
+    this.manifest.config.allowedImports = imports
   }
 
   // 메모리 제한 설정
@@ -114,6 +156,7 @@ export class ContainerBuilder {
   setNameAndTag(name: string, tag: string = 'latest'): void {
     this.manifest.name = name
     this.manifest.tag = tag
+    this.manifest.version = tag
   }
 
   // 라벨 추가
@@ -210,6 +253,51 @@ export class ContainerBuilder {
             this.setRuntime(args[0])
           }
           break
+
+        case 'ABI':
+          if (args[0]) {
+            this.setGaesupAbiVersion(args[0])
+          }
+          break
+
+        case 'DEPENDENCY':
+          if (args[0]) {
+            const [depName, version = '*'] = args[0].split('@')
+            this.addPackageDependency({
+              name: depName,
+              version
+            })
+          }
+          break
+
+        case 'STORE':
+          if (args.length >= 3) {
+            const storeDependency: NonNullable<ContainerManifest['stores']>[number] = {
+              storeId: args[0],
+              schemaId: args[1],
+              schemaVersion: args[2]
+            }
+
+            if (args[3]) {
+              storeDependency.compatRange = args[3]
+            }
+
+            if (args[4]) {
+              storeDependency.conflictPolicy = args[4] as any
+            }
+
+            this.addStoreDependency(storeDependency)
+          }
+          break
+
+        case 'IMPORT':
+          if (args.length > 0) {
+            this.setAllowedImports([
+              ...(this.manifest.allowedImports || []),
+              ...args
+            ])
+          }
+          break
       }
     }
   }
@@ -297,4 +385,8 @@ export class ContainerBuilder {
       default: return value
     }
   }
-} 
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}

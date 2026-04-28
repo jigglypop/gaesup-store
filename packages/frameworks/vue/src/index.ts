@@ -1,4 +1,12 @@
 // Vue Composition API hooks
+export {
+  useGaesupState,
+  defineStore,
+  createVuexCompatibleStore,
+  useStore,
+  useStateHistory,
+  usePersistedState
+} from './composables/useGaesupState'
 export { useContainerState } from './composables/useContainerState'
 export { useContainerManager } from './composables/useContainerManager'
 export { useContainerMetrics } from './composables/useContainerMetrics'

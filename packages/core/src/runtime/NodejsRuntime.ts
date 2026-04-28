@@ -26,7 +26,7 @@ export class NodejsRuntime extends WASMRuntime {
       this.setupNodejsOptimizations(instance)
       return instance
     } catch (error) {
-      throw new Error(`Failed to instantiate WASM module in Node.js: ${error.message}`)
+      throw new Error(`Failed to instantiate WASM module in Node.js: ${getErrorMessage(error)}`)
     }
   }
 
@@ -283,4 +283,8 @@ export class NodejsRuntime extends WASMRuntime {
       uptime: process.uptime()
     }
   }
-} 
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}

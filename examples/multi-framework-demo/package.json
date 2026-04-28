@@ -5,12 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "npm run build:frameworks && vite build",
-    "build:frameworks": "npm run build:react && npm run build:vue && npm run build:svelte && npm run build:angular",
-    "build:react": "vite build --config vite.react.config.ts",
-    "build:vue": "vite build --config vite.vue.config.ts", 
-    "build:svelte": "vite build --config vite.svelte.config.ts",
-    "build:angular": "ng build --configuration production",
+    "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --ext ts,tsx,vue,svelte",

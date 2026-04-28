@@ -62,6 +62,77 @@ export interface IsolationPolicy {
 }
 
 // 컨테이너 설정
+export type DependencyConflictPolicy =
+  | 'reject'
+  | 'isolate'
+  | 'migrate'
+  | 'readonly'
+
+export interface PackageDependencyContract {
+  name: string
+  version: string
+  optional?: boolean
+}
+
+export interface StoreDependencyContract {
+  storeId: string
+  schemaId: string
+  schemaVersion: string
+  compatRange?: string
+  required?: boolean
+  conflictPolicy?: DependencyConflictPolicy
+  writablePaths?: string[]
+  readonlyPaths?: string[]
+}
+
+export interface ContainerPermissionContract {
+  network?: boolean
+  storage?: 'none' | 'scoped' | 'host'
+  dom?: boolean
+  crossStore?: boolean
+  crossContainer?: boolean
+}
+
+export interface ContainerPackageManifest {
+  manifestVersion: '1.0'
+  name: string
+  version: string
+  runtime?: WASMRuntimeType
+  wasm?: {
+    entrypoint?: string
+    sha256?: string
+    size?: number
+  }
+  gaesup?: {
+    abiVersion: string
+    minHostVersion?: string
+  }
+  dependencies?: PackageDependencyContract[]
+  stores?: StoreDependencyContract[]
+  permissions?: ContainerPermissionContract
+  allowedImports?: string[]
+}
+
+export interface RegisteredStoreSchema {
+  storeId: string
+  schemaId: string
+  schemaVersion: string
+  compatRange?: string
+}
+
+export interface HostDependencyContract {
+  name: string
+  version: string
+}
+
+export interface HostCompatibilityConfig {
+  hostVersion?: string
+  abiVersion?: string
+  dependencies?: HostDependencyContract[]
+  stores?: RegisteredStoreSchema[]
+  defaultConflictPolicy?: DependencyConflictPolicy
+}
+
 export interface ContainerConfig {
   maxMemory?: number                  // 최대 메모리 사용량 (bytes)
   maxCpuTime?: number                 // 최대 CPU 시간 (ms)
@@ -226,3 +297,11 @@ export interface GaesupSnapshot {
   state: any;
   created_at: string;
 } 
+
+export interface ContainerConfig {
+  manifest?: ContainerPackageManifest
+}
+
+export interface ContainerManagerConfig {
+  compatibility?: HostCompatibilityConfig
+}

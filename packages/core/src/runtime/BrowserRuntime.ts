@@ -26,7 +26,7 @@ export class BrowserRuntime extends WASMRuntime {
       this.setupBrowserOptimizations(instance)
       return instance
     } catch (error) {
-      throw new Error(`Failed to instantiate WASM module in browser: ${error.message}`)
+      throw new Error(`Failed to instantiate WASM module in browser: ${getErrorMessage(error)}`)
     }
   }
 
@@ -171,7 +171,7 @@ export class BrowserRuntime extends WASMRuntime {
   private checkBulkMemorySupport(): boolean {
     try {
       // Bulk memory operations 지원 확인
-      return typeof WebAssembly.Memory.prototype.fill === 'function'
+      return typeof (WebAssembly.Memory.prototype as any).fill === 'function'
     } catch {
       return false
     }
@@ -195,4 +195,8 @@ export class BrowserRuntime extends WASMRuntime {
       useCompilerOptimizations: true
     }
   }
-} 
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}

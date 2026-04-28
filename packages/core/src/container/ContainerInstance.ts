@@ -1,10 +1,17 @@
 import type { 
   ContainerConfig,
+  HealthStatus,
+  MemoryUsage,
   ContainerMetrics,
-  IsolationPolicy 
+  StateCallback,
+  Unsubscribe
 } from '../types'
 import { ContainerStatus } from '../types'
-import { ContainerError } from '../errors'
+import {
+  ContainerMemoryError,
+  ContainerSecurityError,
+  ContainerTimeoutError
+} from '../errors'
 import { EventBus } from '../events/EventBus'
 
 export class ContainerInstance {
@@ -224,6 +231,7 @@ export class ContainerInstance {
         uptime: this._metrics.uptime,
         memoryUsage: memoryUsage.used,
         memoryLimit: memoryUsage.limit,
+        exports: WebAssembly.Module.exports(this.wasmModule).length,
         callCount: this._metrics.callCount,
         errorCount: this._metrics.errorCount
       }
@@ -237,7 +245,7 @@ export class ContainerInstance {
       return {
         healthy: false,
         lastCheck,
-        details: { error: error.message }
+        details: { error: getErrorMessage(error) }
       }
     }
   }
@@ -322,3 +330,7 @@ export class ContainerInstance {
     }
   }
 } 
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}

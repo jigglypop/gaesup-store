@@ -6,8 +6,19 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
+    "noEmit": false,
+    "allowImportingTsExtensions": false,
     "composite": true,
-    "incremental": true
+    "incremental": true,
+    "tsBuildInfoFile": "./dist/.tsbuildinfo",
+    "baseUrl": ".",
+    "paths": {
+      "@gaesup-state/core": ["../../core/dist/index.d.ts"],
+      "@gaesup-state/adapter": ["../../adapter/dist/index.d.ts"]
+    },
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noImplicitOverride": false
   },
   "include": [
     "src/**/*"
@@ -18,8 +29,5 @@
     "**/*.test.*",
     "**/*.spec.*"
   ],
-  "references": [
-    { "path": "../../core" },
-    { "path": "../../adapter" }
-  ]
-} 
+  "references": []
+}

@@ -100,8 +100,12 @@ export async function compileWASM(
     
     return module
   } catch (error) {
-    throw new Error(`WASM compilation failed: ${error.message}`)
+    throw new Error(`WASM compilation failed: ${getErrorMessage(error)}`)
   }
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }
 
 // 헬퍼 함수들

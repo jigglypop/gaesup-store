@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react'
+import React, { createContext, useContext, useEffect, useState } from 'react'
 import { ContainerManager, type ContainerManagerConfig } from '@gaesup-state/core'
 import type { ContainerContextValue } from '../types'
 
@@ -26,6 +26,8 @@ export function ContainerContextProvider({ config, children }: ContainerContextP
         if (mounted) {
           setManager(newManager)
           setIsInitialized(true)
+        } else {
+          newManager.cleanup().catch(console.error)
         }
       } catch (err) {
         if (mounted) {
@@ -39,27 +41,12 @@ export function ContainerContextProvider({ config, children }: ContainerContextP
 
     return () => {
       mounted = false
-      if (manager) {
-        manager.cleanup().catch(console.error)
-      }
+      setManager((currentManager) => {
+        currentManager?.cleanup().catch(console.error)
+        return null
+      })
     }
   }, [config])
-
-  // 설정 변경 시 매니저 재생성
-  useEffect(() => {
-    if (manager && isInitialized) {
-      const shouldReinitialize = hasConfigChanged(manager.config, config)
-      
-      if (shouldReinitialize) {
-        setIsInitialized(false)
-        manager.cleanup().then(() => {
-          const newManager = new ContainerManager(config)
-          setManager(newManager)
-          setIsInitialized(true)
-        }).catch(setError)
-      }
-    }
-  }, [config, manager, isInitialized])
 
   const contextValue: ContainerContextValue = {
     manager,
@@ -83,27 +70,6 @@ export function useContainerContext(): ContainerContextValue {
   }
 
   return context
-}
-
-// 설정 변경 감지 헬퍼
-function hasConfigChanged(
-  oldConfig: ContainerManagerConfig, 
-  newConfig: ContainerManagerConfig
-): boolean {
-  const oldKeys = Object.keys(oldConfig).sort()
-  const newKeys = Object.keys(newConfig).sort()
-  
-  if (oldKeys.length !== newKeys.length) {
-    return true
-  }
-
-  for (const key of oldKeys) {
-    if (oldConfig[key] !== newConfig[key]) {
-      return true
-    }
-  }
-
-  return false
 }
 
 export { ContainerContext } 

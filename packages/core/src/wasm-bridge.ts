@@ -5,10 +5,10 @@
 
 import type { 
   ContainerConfig, 
-  ContainerStatus, 
   ContainerMetrics,
   ContainerManagerConfig 
 } from './types'
+import { ContainerStatus } from './types'
 
 // Rust WASM 모듈 타입 (동적 import)
 type RustWasmModule = {
@@ -69,7 +69,7 @@ export class WASMBridge {
       
     } catch (error) {
       console.error('❌ WASM 모듈 로드 실패:', error);
-      throw new Error(`WASM 모듈 로드 실패: ${error.message}`);
+      throw new Error(`WASM 모듈 로드 실패: ${getErrorMessage(error)}`);
     }
   }
 
@@ -234,7 +234,6 @@ export class WASMContainerManager {
       maxContainers: 10,
       defaultRuntime: 'browser',
       enableMetrics: true,
-      enableSecurity: true,
       ...config
     };
     
@@ -261,7 +260,8 @@ export class WASMContainerManager {
     }
 
     // Rust 매니저로 컨테이너 생성
-    const containerId = this.rustManager.create_container(config.name);
+    const containerName = config.manifest?.name || 'anonymous-container';
+    const containerId = this.rustManager.create_container(containerName);
     
     // TypeScript 래퍼 생성
     const container = new WASMContainerInstance(
@@ -273,7 +273,7 @@ export class WASMContainerManager {
 
     this.containers.set(containerId, container);
     
-    console.log(`📦 컨테이너 생성 완료: ${config.name} (${containerId})`);
+    console.log(`📦 컨테이너 생성 완료: ${containerName} (${containerId})`);
     return container;
   }
 
@@ -329,7 +329,7 @@ export class WASMContainerInstance {
   private config: ContainerConfig;
   private rustManager: any;
   private wasmBridge: WASMBridge;
-  private status: ContainerStatus = 'created';
+  private status: ContainerStatus = ContainerStatus.STARTING;
 
   constructor(
     id: string, 
@@ -347,7 +347,7 @@ export class WASMContainerInstance {
    * 컨테이너 시작
    */
   async start(): Promise<void> {
-    this.status = 'running';
+    this.status = ContainerStatus.RUNNING;
     console.log(`▶️ 컨테이너 시작: ${this.id}`);
   }
 
@@ -355,7 +355,7 @@ export class WASMContainerInstance {
    * 컨테이너 중지
    */
   async stop(): Promise<void> {
-    this.status = 'stopped';
+    this.status = ContainerStatus.STOPPED;
     console.log(`⏹️ 컨테이너 중지: ${this.id}`);
   }
 
@@ -363,7 +363,7 @@ export class WASMContainerInstance {
    * 함수 호출
    */
   async call(functionName: string, framework: string = 'unknown'): Promise<any> {
-    if (this.status !== 'running') {
+    if (this.status !== ContainerStatus.RUNNING) {
       await this.start();
     }
 
@@ -386,10 +386,17 @@ export class WASMContainerInstance {
   getMetrics(): ContainerMetrics {
     const state = this.getState();
     return {
-      memoryUsage: { used: 0, allocated: 1024 * 1024 }, // 1MB 기본
-      functionCalls: state?.count || 0,
-      executionTime: Date.now() - (state?.last_updated || Date.now()),
-      lastExecuted: new Date(state?.last_updated || Date.now())
+      cpuUsage: 0,
+      memoryUsage: {
+        used: 0,
+        allocated: 1024 * 1024,
+        peak: 1024 * 1024,
+        limit: this.config.maxMemory || 100 * 1024 * 1024
+      },
+      uptime: Date.now() - (state?.last_updated || Date.now()),
+      callCount: state?.count || 0,
+      errorCount: 0,
+      lastActivity: new Date(state?.last_updated || Date.now())
     };
   }
 
@@ -397,7 +404,7 @@ export class WASMContainerInstance {
    * 기본 정보
    */
   getId(): string { return this.id; }
-  getName(): string { return this.config.name; }
+  getName(): string { return this.config.manifest?.name || 'anonymous-container'; }
   getStatus(): ContainerStatus { return this.status; }
   getConfig(): ContainerConfig { return this.config; }
 }
@@ -423,3 +430,7 @@ export function isWASMSupported(): boolean {
   return typeof WebAssembly !== 'undefined' && 
          typeof WebAssembly.instantiate === 'function';
 } 
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}

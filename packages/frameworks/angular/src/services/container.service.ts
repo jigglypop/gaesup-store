@@ -34,7 +34,7 @@ export class ContainerService<T = any> {
 
   private containerName: string = ''
   private config: ContainerServiceConfig<T> = {}
-  private unsubscribeContainer?: () => void
+  private unsubscribeContainer: (() => void) | undefined
   private retryCount = 0
 
   constructor() {

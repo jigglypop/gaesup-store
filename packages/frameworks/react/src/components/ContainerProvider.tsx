@@ -1,4 +1,4 @@
-import React, { ComponentType } from 'react'
+import type { ComponentType } from 'react'
 import { ContainerContextProvider } from '../context/ContainerContext'
 import type { ContainerProviderProps } from '../types'
 import { ContainerErrorBoundary } from './ContainerErrorBoundary'
@@ -19,7 +19,7 @@ export function ContainerProvider({
   )
 }
 
-const DefaultErrorFallback: ComponentType<{ error: Error }> = ({ error }) => (
+const DefaultErrorFallback: ComponentType<{ error: Error; reset: () => void }> = ({ error }) => (
   <div style={{
     padding: '20px',
     border: '1px solid #ff6b6b',

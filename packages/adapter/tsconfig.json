@@ -6,8 +6,11 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
+    "noEmit": false,
+    "allowImportingTsExtensions": false,
     "composite": true,
-    "incremental": true
+    "incremental": true,
+    "tsBuildInfoFile": "./dist/.tsbuildinfo"
   },
   "include": [
     "src/**/*"
@@ -17,8 +20,5 @@
     "dist",
     "**/*.test.*",
     "**/*.spec.*"
-  ],
-  "references": [
-    { "path": "../core" }
   ]
-} 
+}

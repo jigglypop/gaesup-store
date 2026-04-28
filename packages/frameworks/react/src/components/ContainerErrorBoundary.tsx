@@ -1,4 +1,4 @@
-import React, { Component, ComponentType, ReactNode } from 'react'
+import { Component, ComponentType } from 'react'
 import type { ContainerErrorBoundaryProps } from '../types'
 
 interface State {
@@ -35,11 +35,6 @@ export class ContainerErrorBoundary extends Component<ContainerErrorBoundaryProp
   componentDidUpdate(prevProps: ContainerErrorBoundaryProps) {
     const { resetOnPropsChange, resetKeys } = this.props
     const { hasError } = this.state
-
-    if (hasError && !prevProps.hasError) {
-      // 에러 발생 직후
-      return
-    }
 
     if (hasError) {
       // props 변경으로 인한 리셋 체크

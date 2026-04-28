@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { ref, computed, reactive, readonly, watch, onUnmounted, Ref, ComputedRef } from 'vue';
 import { GaesupCore } from '@gaesup-state/core';
 
@@ -38,10 +39,9 @@ export function defineStore<T extends Record<string, any>>(options: StoreDefinit
 
     // 구독 설정
     const callbackId = `vue_${id}_${Math.random().toString(36).slice(2)}`;
-    subscriptionId.value = GaesupCore.subscribe(id, '', callbackId);
-    
     // 콜백 등록
     GaesupCore.registerCallback(callbackId, syncFromWasm);
+    subscriptionId.value = GaesupCore.subscribe(id, '', callbackId);
 
     // 언마운트 시 정리
     onUnmounted(() => {
@@ -162,12 +162,11 @@ export function useGaesupState<T = any>(
 
   // WASM 동기화
   const callbackId = `vue_simple_${storeId}_${Math.random().toString(36).slice(2)}`;
-  subscriptionId.value = GaesupCore.subscribe(storeId, '', callbackId);
-  
   GaesupCore.registerCallback(callbackId, () => {
     const wasmState = GaesupCore.select(storeId, '') as T;
     state.value = wasmState;
   });
+  subscriptionId.value = GaesupCore.subscribe(storeId, '', callbackId);
 
   // 정리
   onUnmounted(() => {

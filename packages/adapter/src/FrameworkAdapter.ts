@@ -1,5 +1,4 @@
-import type { ContainerInstance } from '@gaesup-state/core'
-import type { FrameworkAdapter, ReactivitySystem, StateSubscription } from './types'
+import type { AdapterContainerInstance, FrameworkAdapter, ReactivitySystem, StateSubscription } from './types'
 
 export function createFrameworkAdapter(
   reactivitySystem: ReactivitySystem
@@ -10,7 +9,7 @@ export function createFrameworkAdapter(
   return {
     // 상태 구독
     subscribe<T>(
-      container: ContainerInstance,
+      container: AdapterContainerInstance,
       selector?: (state: any) => T,
       options?: { equalityFn?: (a: T, b: T) => boolean }
     ) {
@@ -26,9 +25,12 @@ export function createFrameworkAdapter(
       const subscription: StateSubscription = {
         id: generateSubscriptionId(),
         container,
-        selector,
         reactiveValue,
         unsubscribe: () => {}
+      }
+
+      if (selector) {
+        subscription.selector = selector
       }
 
       // 컨테이너 상태 변경 구독
@@ -61,7 +63,7 @@ export function createFrameworkAdapter(
 
     // 상태 업데이트
     async setState<T>(
-      container: ContainerInstance,
+      container: AdapterContainerInstance,
       updater: T | ((prev: T) => T)
     ) {
       const currentState = container.state
@@ -75,7 +77,7 @@ export function createFrameworkAdapter(
 
     // 함수 호출
     async callFunction<R>(
-      container: ContainerInstance,
+      container: AdapterContainerInstance,
       functionName: string,
       args?: any
     ): Promise<R> {
@@ -83,7 +85,7 @@ export function createFrameworkAdapter(
     },
 
     // 메트릭 조회
-    getMetrics(container: ContainerInstance) {
+    getMetrics(container: AdapterContainerInstance) {
       return container.metrics
     },
 
@@ -134,7 +136,7 @@ export function createReactAdapter(): FrameworkAdapter {
       }
     },
     
-    updateReactive<T>(reactive, newValue: T) {
+    updateReactive<T>(reactive: { value: T }, newValue: T) {
       reactive.value = newValue
     }
   })
@@ -161,7 +163,7 @@ export function createVueAdapter(): FrameworkAdapter {
       }
     },
     
-    updateReactive<T>(reactive, newValue: T) {
+    updateReactive<T>(reactive: { value: T }, newValue: T) {
       reactive.value = newValue
     }
   })
@@ -188,7 +190,7 @@ export function createSvelteAdapter(): FrameworkAdapter {
       }
     },
     
-    updateReactive<T>(reactive, newValue: T) {
+    updateReactive<T>(reactive: { value: T }, newValue: T) {
       reactive.value = newValue
     }
   })
@@ -215,7 +217,7 @@ export function createAngularAdapter(): FrameworkAdapter {
       }
     },
     
-    updateReactive<T>(reactive, newValue: T) {
+    updateReactive<T>(reactive: { value: T }, newValue: T) {
       reactive.value = newValue
     }
   })

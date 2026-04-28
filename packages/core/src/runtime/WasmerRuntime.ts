@@ -28,7 +28,7 @@ export class WasmerRuntime extends WASMRuntime {
       // Wasmer WASI를 사용한 인스턴스 생성
       return await WebAssembly.instantiate(module, imports)
     } catch (error) {
-      throw new Error(`Wasmer instantiation failed: ${error.message}`)
+      throw new Error(`Wasmer instantiation failed: ${getErrorMessage(error)}`)
     }
   }
 
@@ -83,4 +83,8 @@ export class WasmerRuntime extends WASMRuntime {
       useCompilerOptimizations: true
     }
   }
-} 
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}

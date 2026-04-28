@@ -1,4 +1,14 @@
 // Svelte stores
+export {
+  gaesupStore,
+  gaesupDerived,
+  defineGaesupStore,
+  getStore,
+  createGlobalStore,
+  subscribeMany,
+  resetStore,
+  batchUpdate
+} from './stores/gaesupStore'
 export { createContainerStore } from './stores/containerStore'
 export { createContainerManagerStore } from './stores/managerStore'
 export { createContainerMetricsStore } from './stores/metricsStore'
@@ -10,10 +20,6 @@ export { metrics } from './actions/metrics'
 // Utilities
 export { wrappedContainer } from './utils/wrappedContainer'
 export { derivedContainer } from './utils/derivedContainer'
-
-// Components (re-export)
-export { default as ContainerProvider } from './components/ContainerProvider.svelte'
-export { default as ContainerError } from './components/ContainerError.svelte'
 
 // Types
 export type {

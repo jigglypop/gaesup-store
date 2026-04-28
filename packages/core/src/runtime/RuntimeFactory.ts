@@ -7,7 +7,7 @@ import { WasmedgeRuntime } from './WasmedgeRuntime'
 import { WasmerRuntime } from './WasmerRuntime'
 
 export class RuntimeFactory {
-  private readonly runtimes: Map<WASMRuntimeType, typeof WASMRuntime> = new Map()
+  private readonly runtimes: Map<WASMRuntimeType, new (config: ContainerConfig) => WASMRuntime> = new Map()
 
   constructor() {
     this.registerRuntimes()

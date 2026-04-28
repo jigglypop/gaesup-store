@@ -7,7 +7,8 @@ import type {
   ContainerEvent,
   ContainerEventType,
   ContainerMetadata,
-  ContainerError
+  ContainerError,
+  ContainerManager
 } from '@gaesup-state/core'
 
 // useContainerState 훅 타입들
@@ -71,7 +72,7 @@ export interface UseContainerMetricsOptions {
 export interface ContainerProviderProps {
   config: ContainerManagerConfig
   children: ReactNode
-  fallback?: ComponentType<{ error: Error }>
+  fallback?: ComponentType<{ error: Error; reset: () => void }>
 }
 
 export interface ContainerSuspenseProps {

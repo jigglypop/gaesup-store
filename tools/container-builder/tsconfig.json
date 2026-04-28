@@ -17,8 +17,5 @@
     "dist",
     "**/*.test.*",
     "**/*.spec.*"
-  ],
-  "references": [
-    { "path": "../../packages/core" }
   ]
 } 

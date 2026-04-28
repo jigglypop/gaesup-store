@@ -2,6 +2,7 @@ import type {
   ContainerConfig,
   ContainerManagerConfig,
   ContainerID,
+  ContainerPackageManifest,
   StateCallback,
   Unsubscribe,
   WASMRuntimeType
@@ -9,13 +10,15 @@ import type {
 import { ContainerInstance } from './ContainerInstance'
 import { EventBus } from '../events/EventBus'
 import { RuntimeFactory } from '../runtime/RuntimeFactory'
-import { ContainerNotFoundError, ContainerStartupError } from '../errors'
+import { CompatibilityGuard } from '../compat/CompatibilityGuard'
+import { ContainerCompatibilityError, ContainerNotFoundError, ContainerStartupError } from '../errors'
 
 export class ContainerManager {
   private readonly config: Required<ContainerManagerConfig>
   private readonly containers: Map<ContainerID, ContainerInstance> = new Map()
   private readonly eventBus: EventBus
   private readonly runtimeFactory: RuntimeFactory
+  private readonly compatibilityGuard: CompatibilityGuard
   private readonly containerCache: Map<string, WebAssembly.Module> = new Map()
 
   constructor(config: ContainerManagerConfig = {}) {
@@ -26,11 +29,13 @@ export class ContainerManager {
       cacheSize: config.cacheSize || 100 * 1024 * 1024, // 100MB
       debugMode: config.debugMode || false,
       enableMetrics: config.enableMetrics || true,
-      networkTimeout: config.networkTimeout || 5000
+      networkTimeout: config.networkTimeout || 5000,
+      compatibility: config.compatibility || {}
     }
 
     this.eventBus = new EventBus(this.config.debugMode)
     this.runtimeFactory = new RuntimeFactory()
+    this.compatibilityGuard = new CompatibilityGuard(this.config.compatibility)
 
     if (this.config.debugMode) {
       console.log('[ContainerManager] Initialized with config:', this.config)
@@ -52,11 +57,14 @@ export class ContainerManager {
       }
 
       // WASM 모듈 로드 또는 캐시에서 가져오기
-      const wasmModule = await this.loadWASMModule(name, config)
+      const manifest = await this.resolveManifest(name, config)
+      const runtimeConfig = this.applyManifestDefaults(config, manifest)
+      this.validateCompatibility(containerId, manifest)
+      const wasmModule = await this.loadWASMModule(name, runtimeConfig)
       
       // 런타임 선택 및 인스턴스 생성
-      const runtime = config.runtime || this.config.defaultRuntime
-      const wasmInstance = await this.createWASMInstance(wasmModule, runtime, config)
+      const runtime = runtimeConfig.runtime || this.config.defaultRuntime
+      const wasmInstance = await this.createWASMInstance(wasmModule, runtime, runtimeConfig)
 
       // 컨테이너 인스턴스 생성
       const container = new ContainerInstance(
@@ -65,7 +73,7 @@ export class ContainerManager {
         this.parseVersion(name),
         wasmModule,
         wasmInstance,
-        config,
+        runtimeConfig,
         this.eventBus
       )
 
@@ -81,7 +89,7 @@ export class ContainerManager {
       this.eventBus.emit('container:created', {
         containerId,
         name,
-        config
+        config: runtimeConfig
       })
 
       if (this.config.debugMode) {
@@ -91,7 +99,7 @@ export class ContainerManager {
       return container
 
     } catch (error) {
-      const errorMessage = `Failed to start container ${name}: ${error.message}`
+      const errorMessage = `Failed to start container ${name}: ${getErrorMessage(error)}`
       
       if (this.config.debugMode) {
         console.error(`[ContainerManager] ${errorMessage}`, error)
@@ -196,7 +204,7 @@ export class ContainerManager {
           healthChecks[id] = {
             healthy: false,
             lastCheck: new Date(),
-            error: error.message
+            error: getErrorMessage(error)
           }
         }
       }
@@ -215,6 +223,84 @@ export class ContainerManager {
   private parseVersion(name: string): string {
     const match = name.match(/:(.+)$/)
     return match ? match[1] : 'latest'
+  }
+
+  private async resolveManifest(
+    name: string,
+    config: ContainerConfig
+  ): Promise<ContainerPackageManifest> {
+    if (config.manifest) {
+      return config.manifest
+    }
+
+    const url = `${this.config.registry}/containers/${name}/manifest.json`
+
+    try {
+      const response = await fetch(url)
+
+      if (!response.ok) {
+        throw new Error(`Failed to download manifest: ${response.status} ${response.statusText}`)
+      }
+
+      return await response.json()
+    } catch (error) {
+      throw new Error(`Manifest download failed for ${name}: ${getErrorMessage(error)}`)
+    }
+  }
+
+  private applyManifestDefaults(
+    config: ContainerConfig,
+    manifest: ContainerPackageManifest
+  ): ContainerConfig {
+    const runtimeConfig: ContainerConfig = {
+      ...config,
+      networkAccess: config.networkAccess ?? manifest.permissions?.network ?? false,
+      isolation: config.isolation || {
+        memoryIsolation: true,
+        fileSystemAccess: false,
+        crossContainerComm: manifest.permissions?.crossContainer ?? false
+      },
+      manifest
+    }
+
+    if (config.runtime) {
+      runtimeConfig.runtime = config.runtime
+    } else if (manifest.runtime) {
+      runtimeConfig.runtime = manifest.runtime
+    }
+
+    if (config.allowedImports) {
+      runtimeConfig.allowedImports = config.allowedImports
+    } else if (manifest.allowedImports) {
+      runtimeConfig.allowedImports = manifest.allowedImports
+    }
+
+    return runtimeConfig
+  }
+
+  private validateCompatibility(
+    containerId: ContainerID,
+    manifest: ContainerPackageManifest
+  ): void {
+    const decision = this.compatibilityGuard.validate(manifest)
+
+    if (decision.valid && !decision.isolatedStores.length && !decision.readonlyStores.length) {
+      return
+    }
+
+    if (decision.valid) {
+      throw new ContainerCompatibilityError(
+        containerId,
+        'Store conflict policy requires runtime enforcement that is not enabled yet',
+        { manifest, decision }
+      )
+    }
+
+    throw new ContainerCompatibilityError(
+      containerId,
+      decision.errors.map((error) => error.message).join('; '),
+      { manifest, decision }
+    )
   }
 
   private async loadWASMModule(name: string, config: ContainerConfig): Promise<WebAssembly.Module> {
@@ -242,10 +328,12 @@ export class ContainerManager {
 
   private async downloadFromRegistry(name: string): Promise<ArrayBuffer> {
     const url = `${this.config.registry}/containers/${name}`
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), this.config.networkTimeout)
     
     try {
       const response = await fetch(url, {
-        timeout: this.config.networkTimeout
+        signal: controller.signal
       })
 
       if (!response.ok) {
@@ -255,7 +343,9 @@ export class ContainerManager {
       return await response.arrayBuffer()
 
     } catch (error) {
-      throw new Error(`Registry download failed for ${name}: ${error.message}`)
+      throw new Error(`Registry download failed for ${name}: ${getErrorMessage(error)}`)
+    } finally {
+      clearTimeout(timeoutId)
     }
   }
 
@@ -296,7 +386,7 @@ export class ContainerManager {
   private getCacheSize(): number {
     let totalSize = 0
     
-    this.containerCache.forEach((module) => {
+    this.containerCache.forEach(() => {
       // WebAssembly.Module의 크기 추정 (실제로는 더 정확한 계산 필요)
       totalSize += 1024 * 1024 // 대략적인 크기
     })
@@ -309,3 +399,7 @@ export class ContainerManager {
     return this.eventBus
   }
 } 
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}

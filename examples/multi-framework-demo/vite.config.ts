@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import vue from '@vitejs/plugin-vue';
-import { svelte } from '@sveltejs/vite-plugin-svelte';
+import { svelte, vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 import { resolve } from 'path';
 
 export default defineConfig({
@@ -21,6 +21,7 @@ export default defineConfig({
       }
     }),
     svelte({
+      preprocess: vitePreprocess(),
       // Svelte 컴파일러 옵션
       compilerOptions: {
         dev: process.env.NODE_ENV === 'development'
@@ -144,7 +145,7 @@ export default defineConfig({
     __PROD__: process.env.NODE_ENV === 'production',
     __VERSION__: JSON.stringify(process.env.npm_package_version || '1.0.0'),
     // WASM 지원 확인
-    __WASM_SUPPORTED__: 'typeof WebAssembly !== "undefined"'
+    __WASM_SUPPORTED__: JSON.stringify(true)
   },
 
   // CSS 설정
@@ -160,7 +161,7 @@ export default defineConfig({
   // 워커 설정 (WASM 워커 지원)
   worker: {
     format: 'es',
-    plugins: []
+    plugins: () => []
   },
 
   // 보안 설정

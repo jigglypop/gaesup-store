@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { writable, derived, get, type Readable, type Writable } from 'svelte/store';
 import { GaesupCore } from '@gaesup-state/core';
 

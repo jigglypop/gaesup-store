@@ -61,10 +61,10 @@ export class ReduxDevToolsBridge {
       });
 
       // 초기 상태 설정
-      this.devtools.init(this.currentState);
+      this.devtools!.init(this.currentState);
       
       // DevTools에서 오는 메시지 처리
-      this.devtools.subscribe((message: any) => {
+      this.devtools!.subscribe((message: any) => {
         this.handleDevToolsMessage(message);
       });
 

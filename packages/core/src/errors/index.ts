@@ -1,6 +1,6 @@
 export class ContainerError extends Error {
   readonly code: string
-  readonly containerId?: string
+  containerId?: string
   readonly details?: any
   
   constructor(message: string, code: string, details?: any) {
@@ -76,6 +76,19 @@ export class ContainerSecurityError extends ContainerError {
     this.name = 'ContainerSecurityError'
     this.containerId = containerId
     Object.setPrototypeOf(this, ContainerSecurityError.prototype)
+  }
+}
+
+export class ContainerCompatibilityError extends ContainerError {
+  constructor(containerId: string, violation: string, details?: any) {
+    super(
+      `Container compatibility violation: ${containerId} - ${violation}`,
+      'CONTAINER_COMPATIBILITY_VIOLATION',
+      { violation, ...details }
+    )
+    this.name = 'ContainerCompatibilityError'
+    this.containerId = containerId
+    Object.setPrototypeOf(this, ContainerCompatibilityError.prototype)
   }
 }
 

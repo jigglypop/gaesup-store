@@ -48,7 +48,7 @@ export function useContainerState<T = any>(
         }
         
         // 상태 구독
-        const unsubscribe = containerInstance.subscribe((newState) => {
+        const unsubscribe = containerInstance.subscribe((newState: T) => {
           if (mountedRef.current) {
             setState(newState)
             onStateChange?.(newState)

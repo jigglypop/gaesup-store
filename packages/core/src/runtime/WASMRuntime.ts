@@ -8,7 +8,7 @@ export abstract class WASMRuntime {
   }
 
   abstract isAvailable(): boolean
-  abstract async instantiate(module: WebAssembly.Module): Promise<WebAssembly.Instance>
+  abstract instantiate(module: WebAssembly.Module): Promise<WebAssembly.Instance>
   
   // 런타임별 최적화 힌트
   getOptimizationHints(): OptimizationHints {
@@ -97,13 +97,13 @@ export abstract class WASMRuntime {
     }
   }
 
-  private createWASIImports() {
+  protected createWASIImports() {
     // 기본적인 WASI 구현 (제한적)
     return {
       proc_exit: (code: number) => {
         throw new Error(`WASM process exit with code: ${code}`)
       },
-      fd_write: (fd: number, iovs: number, iovs_len: number, nwritten: number) => {
+      fd_write: (fd: number, _iovs: number, _iovs_len: number, _nwritten: number) => {
         // stdout/stderr 기본 구현
         if (fd === 1 || fd === 2) {
           // 실제 구현에서는 메모리에서 데이터를 읽어야 함
@@ -118,11 +118,11 @@ export abstract class WASMRuntime {
       environ_get: () => 0,
       args_sizes_get: () => 0,
       args_get: () => 0,
-      random_get: (buf: number, buf_len: number) => {
+      random_get: (_buf: number, _buf_len: number) => {
         // 랜덤 데이터 생성 (실제로는 메모리에 써야 함)
         return 0
       },
-      clock_time_get: (id: number, precision: number, time: number) => {
+      clock_time_get: (_id: number, _precision: number, _time: number) => {
         // 현재 시간 반환 (실제로는 메모리에 써야 함)
         return 0
       }

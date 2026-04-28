@@ -79,8 +79,8 @@ export const logger: Middleware = (store) => (next) => (action) => {
 
 // 2. Thunk 미들웨어 (비동기 액션)
 export const thunk: Middleware = (store) => (next) => (action) => {
-  if (typeof action === 'function') {
-    return action(store.dispatch, store.getState);
+  if (typeof (action as any) === 'function') {
+    return (action as any)(store.dispatch, store.getState);
   }
   
   return next(action);

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { GaesupCore } from '@gaesup-state/core';
 
 // Redux와 동일한 인터페이스
@@ -46,17 +46,19 @@ export function useGaesupState<T = any>(
       setState(newState);
     };
 
-    // WASM 코어에 구독 등록
-    subscriptionRef.current = GaesupCore.subscribe(storeId, '', callbackId);
-
     // JavaScript 레벨에서 콜백 등록 (WASM과 연동)
     GaesupCore.registerCallback(callbackId, handleStateChange);
+
+    // WASM 코어에 구독 등록
+    const subscription = GaesupCore.subscribe(storeId, '', callbackId);
+    subscriptionRef.current = typeof subscription === 'string' ? subscription : callbackId;
 
     return () => {
       // 구독 해제
       if (subscriptionRef.current) {
         GaesupCore.unsubscribe(subscriptionRef.current);
         GaesupCore.unregisterCallback(callbackId);
+        subscriptionRef.current = null;
       }
     };
   }, [storeId]);
@@ -84,6 +86,7 @@ export function useGaesupState<T = any>(
         devtools.disconnect();
       };
     }
+    return undefined;
   }, [storeId, options.devtools]);
 
   return [state, dispatch];
