@@ -12,7 +12,7 @@ corepack prepare pnpm@8.10.0 --activate
 pnpm install
 ```
 
-Rust와 `wasm-pack`은 Rust/WASM 패키지를 다시 빌드할 때만 필요합니다. 프론트엔드 동작 확인은 JavaScript fallback으로도 가능합니다.
+Rust와 `wasm-pack`은 Rust/WASM 코어를 빌드하는 데 필요합니다. 현재 store 실행 경로는 `packages/core-rust`에서 빌드된 WASM 산출물만 사용합니다.
 
 ## 2. 빌드
 

@@ -1,315 +1,181 @@
-# 🚀 Gaesup-State
+# Gaesup-State
 
-**크로스 프레임워크 WASM 컨테이너화 상태관리 라이브러리**
+Gaesup-State는 프론트엔드에서 Rust WASM 코어를 기반으로 여러 프레임워크가 같은 상태를 공유하고, WASM 패키지를 컨테이너처럼 검증해서 실행하기 위한 런타임입니다.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)](https://www.typescriptlang.org/)
-[![WebAssembly](https://img.shields.io/badge/WebAssembly-enabled-brightgreen.svg)](https://webassembly.org/)
-[![Docker Desktop](https://img.shields.io/badge/Docker%20Desktop-WASM%20Support-blue.svg)](https://docs.docker.com/desktop/wasm/)
+핵심 목표는 단순한 전역 상태 관리가 아닙니다. 패키지가 어떤 의존성, 어떤 ABI, 어떤 store schema, 어떤 GPU 가속기 계약을 요구하는지 manifest로 선언하고, host가 실행 전에 이를 검증합니다. 상태는 React, Vue, Svelte, Angular 어댑터가 같은 Rust WASM store를 구독하는 방식으로 공유됩니다.
 
-## 🌟 혁신적 특징
+## 현재 상태
 
-### 🔥 극도로 빠른 성능
-- **10-50배 빠른 상태 업데이트** (기존 Redux/Zustand 대비)
-- **ms 단위 cold start** - 즉시 실행
-- **메모리 효율성** - 최대 70% 메모리 절약
+현재 저장소에서 동작하는 주요 범위는 다음과 같습니다.
 
-### 🌐 완전한 크로스 프레임워크 지원
-- **React** - 훅 기반 통합
-- **Vue 3** - Composition API 지원  
-- **Svelte** - 네이티브 스토어 통합
-- **Angular** - 신호 및 서비스 통합
+- Rust WASM 기반 named store 코어
+- `createStore`, `dispatch`, `select`, `subscribe`, `snapshot`, `metrics`
+- React, Vue, Svelte, Angular 어댑터
+- WASM 컨테이너 manifest 타입
+- host 의존성과 bundled 의존성 검증
+- store schema 충돌 검증과 격리 정책
+- CUDA/WebGPU accelerator 계약 검증
+- Containerfile 스타일 WASM 패키징 빌더
+- 두 페이지로 구성된 멀티 프레임워크 데모
 
-### 📦 진정한 컨테이너화
-- **도커와 동일한 패러다임** - `gaesup run`, `gaesup pull`, `gaesup push`
-- **Docker Desktop 통합** - 실제 WASM workloads 지원
-- **완전한 격리** - 메모리, 실행 환경, 보안
+## 왜 필요한가
 
-### 🔒 엔터프라이즈급 보안
-- **샌드박스 실행** - 완전한 격리 환경
-- **메모리 보호** - 버퍼 오버플로우 불가능
-- **함수 수준 권한 제어** - 세밀한 접근 제어
+프론트엔드 애플리케이션이 커지면 다음 문제가 자주 생깁니다.
 
-## 🚀 빠른 시작
+- 프레임워크별로 상태 복사본이 생겨 같은 값이 서로 다르게 보임
+- 패키지별 의존성 버전이 host 의존성과 충돌함
+- store schema가 맞지 않는데 같은 전역 상태에 붙어 상태가 깨짐
+- WASM 패키지가 어떤 권한과 런타임 기능을 요구하는지 실행 전에는 알기 어려움
+- GPU 가속이 필요한 패키지가 host/runtime의 CUDA 또는 WebGPU 지원 여부를 확인하지 못함
 
-### 설치
+Gaesup-State는 이 문제를 다음 방식으로 풉니다.
+
+- store 실행은 Rust WASM 코어가 담당합니다.
+- 프레임워크 어댑터는 같은 store를 구독합니다.
+- 컨테이너 manifest는 ABI, 의존성, 권한, store schema, accelerator 요구사항을 선언합니다.
+- host는 `CompatibilityGuard`로 manifest를 먼저 검증합니다.
+- 충돌하는 라이브러리는 컨테이너 내부에 bundled dependency로 패키징할 수 있습니다.
+- store schema가 맞으면 공유 store를 쓰고, 맞지 않으면 정책에 따라 차단하거나 격리합니다.
+
+## 빠른 시작
 
 ```bash
-# 코어 라이브러리
-pnpm add @gaesup-state/core
-
-# 프레임워크 통합 (원하는 것 선택)
-pnpm add @gaesup-state/react      # React
-pnpm add @gaesup-state/vue        # Vue 3
-pnpm add @gaesup-state/svelte     # Svelte
-pnpm add @gaesup-state/angular    # Angular
+corepack enable
+corepack prepare pnpm@8.10.0 --activate
+pnpm install
+pnpm run build:wasm
+pnpm --filter @gaesup-state/core run build
+pnpm --filter @gaesup-state/multi-framework-demo run dev -- --host 0.0.0.0
 ```
 
-### React 예제
+브라우저에서 다음 주소를 엽니다.
 
-```tsx
-import { useContainerState } from '@gaesup-state/react'
-
-function TodoApp() {
-  const { state: todos, call, isLoading } = useContainerState('todo-manager:1.0.0', {
-    initialState: []
-  })
-
-  const addTodo = async (title: string) => {
-    await call('addTodo', { title, completed: false })
-  }
-
-  if (isLoading) return <div>WASM 컨테이너 로딩 중...</div>
-
-  return (
-    <div>
-      <h1>📝 할 일 목록 ({todos.length}개)</h1>
-      {todos.map(todo => (
-        <div key={todo.id}>{todo.title}</div>
-      ))}
-    </div>
-  )
-}
+```text
+http://localhost:3000/
 ```
 
-### Vue 3 예제
+데모는 두 페이지로 구성됩니다.
 
-```vue
-<template>
-  <div>
-    <h1>📝 할 일 목록 ({{ state.length }}개)</h1>
-    <div v-for="todo in state" :key="todo.id">
-      {{ todo.title }}
-    </div>
-  </div>
-</template>
+1. 공유 카운터
+   React, Vue, Svelte, Angular-like 카드가 같은 Rust WASM store를 구독합니다. 어느 카드에서 `+1`을 눌러도 네 카드의 count가 함께 올라가야 합니다.
 
-<script setup>
-import { useContainerState } from '@gaesup-state/vue'
+2. 의존성 격리
+   host 의존성 공유, bundled dependency 실행, store schema 격리, CUDA accelerator 계약, host 의존성 충돌 차단을 확인합니다.
 
-const { state, call } = useContainerState('todo-manager:1.0.0', {
-  initialState: []
-})
-
-const addTodo = async (title) => {
-  await call('addTodo', { title, completed: false })
-}
-</script>
-```
-
-### Svelte 예제
-
-```svelte
-<script>
-  import { createContainerStore } from '@gaesup-state/svelte'
-  
-  const todoStore = createContainerStore('todo-manager:1.0.0', {
-    initialState: []
-  })
-  
-  const addTodo = async (title) => {
-    await todoStore.call('addTodo', { title, completed: false })
-  }
-</script>
-
-<h1>📝 할 일 목록 ({$todoStore.state.length}개)</h1>
-{#each $todoStore.state as todo}
-  <div>{todo.title}</div>
-{/each}
-```
-
-### Angular 예제
+## 기본 사용
 
 ```typescript
-// todo.component.ts
-import { Component, inject } from '@angular/core'
-import { ContainerService } from '@gaesup-state/angular'
+import { GaesupCore } from '@gaesup-state/core';
 
-@Component({
-  template: `
-    <h1>📝 할 일 목록 ({{ state().length }}개)</h1>
-    <div *ngFor="let todo of state()">{{ todo.title }}</div>
-  `
-})
-export class TodoComponent {
-  private containerService = inject(ContainerService)
-  
-  state = this.containerService.state
-  
-  constructor() {
-    this.containerService.initialize('todo-manager:1.0.0', {
-      initialState: []
-    })
+await GaesupCore.createStore('orders', { count: 0 });
+
+await GaesupCore.dispatch('orders', 'MERGE', { count: 1 });
+
+const count = GaesupCore.select('orders', 'count');
+```
+
+구독은 callback을 등록한 뒤 store에 연결합니다.
+
+```typescript
+GaesupCore.registerCallback('orders-listener', (state) => {
+  console.log(state);
+});
+
+const subscriptionId = GaesupCore.subscribe('orders', '', 'orders-listener');
+
+GaesupCore.unsubscribe(subscriptionId);
+GaesupCore.unregisterCallback('orders-listener');
+```
+
+## Manifest 예시
+
+```typescript
+const manifest = {
+  manifestVersion: '1.0',
+  name: 'analytics-widget',
+  version: '1.0.0',
+  gaesup: { abiVersion: '^1.0.0' },
+  dependencies: [
+    { name: 'date-fns', version: '^2.29.0', source: 'host' },
+    { name: 'chart.js', version: '^3.9.0', source: 'bundled' }
+  ],
+  stores: [
+    {
+      storeId: 'analytics',
+      schemaId: 'analytics-state',
+      schemaVersion: '^2.0.0',
+      conflictPolicy: 'reject'
+    }
+  ],
+  accelerators: [
+    { kind: 'cuda', version: '>=12.0.0', capabilities: ['sm_80'] }
+  ],
+  allowedImports: ['env.memory', 'env.gpu.cuda'],
+  permissions: {
+    network: false,
+    storage: 'scoped'
   }
-  
-  async addTodo(title: string) {
-    await this.containerService.call('addTodo', { title, completed: false })
-  }
-}
+};
 ```
 
-## 🐳 Docker 통합
+`source`가 `host`이면 host가 제공하는 의존성과 버전이 맞아야 합니다. `source`가 `bundled`이면 컨테이너가 의존성을 함께 패키징하므로 host 의존성 그래프를 바꾸지 않습니다.
 
-### WASM 컨테이너 실행
+CUDA는 브라우저가 직접 실행하는 기능이 아닙니다. Gaesup-State에서 CUDA 지원은 host/runtime이 CUDA 실행 계층을 제공하고, 컨테이너가 그 요구사항을 manifest로 선언한다는 뜻입니다.
 
-```bash
-# Docker Desktop에서 WASM 컨테이너 실행
-docker run --runtime=io.containerd.wasmedge.v1 \
-  --platform=wasi/wasm \
-  gaesup/todo-manager:1.0.0
+## Containerfile 예시
 
-# 로컬 레지스트리에서 실행
-gaesup run todo-manager:1.0.0
-
-# 컨테이너 빌드
-gaesup build -f Containerfile.wasm -t my-container:latest .
-
-# 레지스트리에 푸시
-gaesup push my-container:latest
+```dockerfile
+FROM scratch
+ABI 1.0
+DEPENDENCY onnxruntime-gpu ^1.18.0 bundled
+ACCELERATOR cuda >=12.0.0 sm_80 tensor-cores
+STORE analytics analytics-state ^2.0.0 reject
+IMPORT env.memory env.gpu.cuda
 ```
 
-### Docker Compose 예제
+## 패키지 구조
 
-```yaml
-version: '3.8'
-services:
-  todo-wasm:
-    build:
-      context: ./wasm-containers/todo
-      dockerfile: Dockerfile.wasm
-      platforms:
-        - wasi/wasm
-    runtime: io.containerd.wasmedge.v1
-    platform: wasi/wasm
-    environment:
-      - GAESUP_MAX_MEMORY=50MB
-      - GAESUP_DEBUG=true
-      
-  frontend:
-    image: node:18
-    command: npm run dev
-    environment:
-      - VITE_WASM_CONTAINERS=todo-wasm:latest
-    depends_on:
-      - todo-wasm
-```
-
-## 📊 성능 벤치마크
-
-### 상태 업데이트 성능 (10,000개 객체)
-
-| 라이브러리 | 실행 시간 | 메모리 사용량 | FPS 드롭 |
-|------------|----------|--------------|----------|
-| **Redux Toolkit** | 450ms | 15.2MB | 23fps → 8fps |
-| **Zustand** | 280ms | 8.1MB | 23fps → 12fps |
-| **Recoil** | 320ms | 11.5MB | 23fps → 10fps |
-| **Valtio** | 190ms | 6.8MB | 23fps → 15fps |
-| **🚀 Gaesup-State** | **8ms** | **2.1MB** | **23fps → 22fps** |
-
-### 메모리 효율성
-
-```
-Redux (대규모 상태):  사용량 ████████████████████ 100%
-Zustand:             사용량 ████████████████     80%
-🚀 Gaesup-State:     사용량 ██████               30%
-```
-
-### Cold Start 성능
-
-```
-Redux:               초기화 ████████ 240ms
-Zustand:             초기화 ████     120ms  
-🚀 Gaesup-State:     초기화 █        8ms
-```
-
-## 🏗️ 아키텍처
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                    Frontend Application                 │
-├─────────────────────────────────────────────────────────┤
-│  React  │  Vue 3  │  Svelte  │  Angular  │   Vanilla   │
-├─────────────────────────────────────────────────────────┤
-│               Framework Adapter Layer                   │
-├─────────────────────────────────────────────────────────┤
-│                  WASM Container Runtime                  │
-│  ┌─────────────┐ ┌─────────────┐ ┌─────────────────────┐ │
-│  │ Container A │ │ Container B │ │    Container C      │ │
-│  │   (Todo)    │ │ (Counter)   │ │   (Analytics)       │ │
-│  │   [WASM]    │ │   [WASM]    │ │     [WASM]          │ │
-│  └─────────────┘ └─────────────┘ └─────────────────────┘ │
-├─────────────────────────────────────────────────────────┤
-│              Container Management Layer                  │
-│        (Lifecycle, Security, Resource Control)          │
-├─────────────────────────────────────────────────────────┤
-│  ┌─────────────┐ ┌─────────────┐ ┌─────────────────────┐ │
-│  │   Browser   │ │   Node.js   │ │    Native Runtime   │ │
-│  │   Runtime   │ │   Runtime   │ │  (Wasmtime/WasmEdge) │ │
-│  └─────────────┘ └─────────────┘ └─────────────────────┘ │
-└─────────────────────────────────────────────────────────┘
-```
-
-## 📦 패키지 구조
-
-```
+```text
 gaesup-state/
 ├── packages/
-│   ├── core/                 # 핵심 WASM 컨테이너 런타임
-│   ├── adapter/              # 프레임워크 독립적 어댑터
-│   ├── registry/             # 컨테이너 레지스트리 서버
+│   ├── core/                 # TypeScript API와 container compatibility
+│   ├── core-rust/            # Rust WASM store core
+│   ├── adapter/              # 공통 어댑터 계층
 │   └── frameworks/
-│       ├── react/            # React 통합
-│       ├── vue/              # Vue 3 통합
-│       ├── svelte/           # Svelte 통합
-│       └── angular/          # Angular 통합
+│       ├── react/
+│       ├── vue/
+│       ├── svelte/
+│       └── angular/
 ├── tools/
-│   └── container-builder/    # WASM 컨테이너 빌더
+│   └── container-builder/    # WASM 컨테이너 manifest 빌더
 ├── examples/
-│   ├── todo-app/            # 크로스 프레임워크 데모
-│   └── wasm-containers/     # 예제 WASM 컨테이너들
-└── docker/                  # Docker Desktop 통합
+│   └── multi-framework-demo/
+├── docs/
+└── docker/
 ```
 
-## 🔧 개발 환경 설정
+## 주요 명령
 
 ```bash
-# 의존성 설치
-pnpm install
-
-# 전체 빌드
-pnpm build
-
-# 개발 서버 시작
-pnpm dev
-
-# 예제 앱 실행
-cd examples/todo-app
-pnpm dev
-
-# 레지스트리 서버 시작
-cd packages/registry
-pnpm start
+pnpm run build:wasm
+pnpm --filter @gaesup-state/core run build
+pnpm --filter @gaesup-state/core exec vitest run src/__tests__/core.test.ts
+pnpm --filter @gaesup-state/multi-framework-demo run build
+pnpm --filter @gaesup-state/container-builder run build
 ```
 
-## 🤝 기여하기
+## 문서
 
-1. Fork 후 브랜치 생성
-2. 변경사항 커밋
-3. 테스트 실행: `pnpm test`
-4. Pull Request 생성
+- [문서 홈](./docs/README.md)
+- [빠른 시작](./docs/quick-start.md)
+- [API 레퍼런스](./docs/api-reference.md)
+- [Docker/WASM 패키징](./docs/docker-integration.md)
+- [성능 메모](./docs/performance.md)
 
-## 📄 라이선스
+## 이름
 
-MIT License - 자세한 내용은 [LICENSE](LICENSE) 파일 참조
+현재 저장소 이름은 `gaesup-store`이지만, 기능 범위는 store를 넘어 WASM runtime, manifest 검증, dependency isolation, accelerator contract까지 포함합니다. 장기적으로는 `gaesup-runtime`이 더 넓은 의미를 담기 좋습니다.
 
-## 🙏 감사 인사
+## 라이선스
 
-- **WebAssembly Community** - WASM 생태계 발전
-- **Docker Team** - WASM workloads 지원
-- **Framework Teams** - React, Vue, Svelte, Angular 팀
-
----
-
-**🚀 Gaesup-State로 차세대 웹 애플리케이션을 구축하세요!**
-
-[웹사이트](https://gaesup-state.dev) | [문서](https://docs.gaesup-state.dev) | [예제](https://examples.gaesup-state.dev) | [Discord](https://discord.gg/gaesup-state) 
+MIT License

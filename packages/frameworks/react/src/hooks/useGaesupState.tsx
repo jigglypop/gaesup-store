@@ -40,8 +40,8 @@ export function useGaesupState<T = any>(
     const callbackId = `react_${storeId}_${Math.random().toString(36).slice(2)}`;
 
     // 상태 변경 시 React 컴포넌트 업데이트
-    const handleStateChange = () => {
-      const fullState = GaesupCore.select(storeId, '');
+    const handleStateChange = (nextState?: any) => {
+      const fullState = nextState ?? GaesupCore.select(storeId, '');
       const newState = selectorRef.current ? selectorRef.current(fullState) : fullState;
       setState(newState);
     };

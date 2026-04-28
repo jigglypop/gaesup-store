@@ -1,4 +1,3 @@
-import './polyfills/wasm-polyfill';
 import {
   SHARED_STORE_ID,
   connectDevTools,

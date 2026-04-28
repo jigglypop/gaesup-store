@@ -33,7 +33,8 @@ export async function initializeSharedStore(): Promise<void> {
     console.log('✅ Shared store initialized');
   } catch (error) {
     // 이미 존재하는 경우 무시
-    if (!error.message.includes('already exists')) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!message.includes('already exists')) {
       throw error;
     }
   }
@@ -146,9 +147,8 @@ export function getHistory(): SharedState['history'] {
 export function subscribeToStore(callback: (state: SharedState) => void): () => void {
   const callbackId = `shared_${Math.random().toString(36).slice(2)}`;
   
-  GaesupCore.registerCallback(callbackId, () => {
-    const state = getSharedState();
-    callback(state);
+  GaesupCore.registerCallback(callbackId, (state?: SharedState) => {
+    callback(state || getSharedState());
   });
   
   const subscriptionId = GaesupCore.subscribe(SHARED_STORE_ID, '', callbackId);

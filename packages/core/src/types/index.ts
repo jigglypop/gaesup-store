@@ -86,6 +86,15 @@ export interface StoreDependencyContract {
   readonlyPaths?: string[]
 }
 
+export type AcceleratorKind = 'cpu' | 'webgpu' | 'cuda'
+
+export interface AcceleratorDependencyContract {
+  kind: AcceleratorKind
+  version?: string
+  optional?: boolean
+  capabilities?: string[]
+}
+
 export interface ContainerPermissionContract {
   network?: boolean
   storage?: 'none' | 'scoped' | 'host'
@@ -109,6 +118,7 @@ export interface ContainerPackageManifest {
     minHostVersion?: string
   }
   dependencies?: PackageDependencyContract[]
+  accelerators?: AcceleratorDependencyContract[]
   stores?: StoreDependencyContract[]
   permissions?: ContainerPermissionContract
   allowedImports?: string[]
@@ -126,10 +136,17 @@ export interface HostDependencyContract {
   version: string
 }
 
+export interface HostAcceleratorContract {
+  kind: AcceleratorKind
+  version?: string
+  capabilities?: string[]
+}
+
 export interface HostCompatibilityConfig {
   hostVersion?: string
   abiVersion?: string
   dependencies?: HostDependencyContract[]
+  accelerators?: HostAcceleratorContract[]
   stores?: RegisteredStoreSchema[]
   defaultConflictPolicy?: DependencyConflictPolicy
 }

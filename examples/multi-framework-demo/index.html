@@ -343,6 +343,10 @@
       border-top-color: #f7c873;
     }
 
+    .scenario-card.gpu {
+      border-top-color: #9d8cff;
+    }
+
     .scenario-topline {
       display: flex;
       align-items: center;
@@ -374,6 +378,11 @@
       color: #ffe0a3;
     }
 
+    .scenario-card.gpu .scenario-topline span {
+      background: rgba(157, 140, 255, 0.14);
+      color: #d9d0ff;
+    }
+
     .scenario-card p {
       color: #a9bbc7;
       line-height: 1.5;
@@ -382,7 +391,7 @@
 
     .manifest-grid {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 10px;
     }
 

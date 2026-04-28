@@ -7,7 +7,7 @@ import {
 type Scenario = {
   title: string;
   intent: string;
-  executionMode: 'shared' | 'packaged' | 'isolated' | 'blocked';
+  executionMode: 'shared' | 'packaged' | 'isolated' | 'gpu' | 'blocked';
   manifest: ContainerPackageManifest;
 };
 
@@ -19,6 +19,10 @@ const hostConfig: HostCompatibilityConfig = {
     { name: 'date-fns', version: '2.30.0' },
     { name: 'zod', version: '3.23.8' },
     { name: 'chart.js', version: '4.4.3' }
+  ],
+  accelerators: [
+    { kind: 'webgpu', version: '1.0.0', capabilities: ['shader-f16'] },
+    { kind: 'cuda', version: '12.4.0', capabilities: ['sm_80', 'tensor-cores'] }
   ],
   stores: [
     {
@@ -111,6 +115,34 @@ const scenarios: Scenario[] = [
     }
   },
   {
+    title: 'CUDA 분석 컨테이너',
+    intent: '브라우저 직접 CUDA가 아니라, host/runtime이 CUDA 12와 필요한 capability를 제공할 때 GPU 경로로 실행되는 예입니다.',
+    executionMode: 'gpu',
+    manifest: {
+      manifestVersion: '1.0',
+      name: 'cuda-analytics',
+      version: '1.1.0',
+      runtime: 'browser',
+      gaesup: { abiVersion: '^1.0.0' },
+      dependencies: [
+        { name: 'onnxruntime-gpu', version: '^1.18.0', source: 'bundled' }
+      ],
+      accelerators: [
+        { kind: 'cuda', version: '>=12.0.0', capabilities: ['sm_80'] }
+      ],
+      stores: [
+        {
+          storeId: 'analytics',
+          schemaId: 'analytics-state',
+          schemaVersion: '^2.0.0',
+          conflictPolicy: 'reject'
+        }
+      ],
+      allowedImports: ['env.memory', 'env.gpu.cuda'],
+      permissions: { network: false, storage: 'scoped' }
+    }
+  },
+  {
     title: '안전하지 않은 호스트 플러그인',
     intent: '필요한 chart.js 버전을 컨테이너에 패키징하지 않고 호스트에서 가져오려는 예입니다.',
     executionMode: 'blocked',
@@ -190,6 +222,13 @@ export function mountDependencyIsolationDemo(elementId: string) {
               <li><code>${store.storeId}</code><span>${store.schemaId}@${store.schemaVersion}</span></li>
             `).join('')}
           </ul>
+
+          <h4>제공 가속기</h4>
+          <ul>
+            ${hostConfig.accelerators?.map((accelerator) => `
+              <li><code>${accelerator.kind}</code><span>${formatHostAccelerator(accelerator)}</span></li>
+            `).join('')}
+          </ul>
         </article>
 
         <div class="scenario-list">
@@ -212,6 +251,10 @@ export function mountDependencyIsolationDemo(elementId: string) {
                 <div>
                   <span>Store 계약</span>
                   <strong>${formatStores(scenario.manifest)}</strong>
+                </div>
+                <div>
+                  <span>가속기</span>
+                  <strong>${formatAccelerators(scenario.manifest)}</strong>
                 </div>
               </div>
               ${decision.errors.length > 0 ? `
@@ -258,6 +301,20 @@ function formatStores(manifest: ContainerPackageManifest) {
   }).join(', ') || 'None';
 }
 
+function formatAccelerators(manifest: ContainerPackageManifest) {
+  return manifest.accelerators?.map((accelerator) => {
+    const version = accelerator.version ? `@${accelerator.version}` : '';
+    const capabilities = accelerator.capabilities?.length ? ` (${accelerator.capabilities.join(', ')})` : '';
+    return `${accelerator.kind}${version}${capabilities}`;
+  }).join(', ') || 'None';
+}
+
+function formatHostAccelerator(accelerator: NonNullable<HostCompatibilityConfig['accelerators']>[number]) {
+  const version = accelerator.version || 'any';
+  const capabilities = accelerator.capabilities?.length ? `, ${accelerator.capabilities.join(', ')}` : '';
+  return `${version}${capabilities}`;
+}
+
 function formatPolicy(policy: string) {
   if (policy === 'reject') return '충돌 시 차단';
   if (policy === 'isolate') return '충돌 시 격리';
@@ -279,6 +336,18 @@ function formatIssueMessage(code: string, fallback: string) {
     return '패키지가 요구하는 store schema와 호스트에 등록된 store schema가 맞지 않습니다.';
   }
 
+  if (code === 'ACCELERATOR_MISSING') {
+    return '컨테이너가 요구한 GPU 가속기를 host/runtime이 제공하지 않습니다.';
+  }
+
+  if (code === 'ACCELERATOR_VERSION_MISMATCH') {
+    return '컨테이너가 요구한 GPU 런타임 버전과 host/runtime 제공 버전이 맞지 않습니다.';
+  }
+
+  if (code === 'ACCELERATOR_CAPABILITY_MISSING') {
+    return '컨테이너가 요구한 GPU capability를 host/runtime이 제공하지 않습니다.';
+  }
+
   return fallback;
 }
 
@@ -288,6 +357,7 @@ function getScenarioClass(
 ) {
   if (!decision.valid) return 'fail';
   if (scenario.executionMode === 'isolated' || decision.isolatedStores.length > 0) return 'isolated';
+  if (scenario.executionMode === 'gpu') return 'gpu';
   if (scenario.executionMode === 'packaged') return 'packaged';
   return 'pass';
 }
@@ -298,6 +368,7 @@ function getScenarioStatus(
 ) {
   if (!decision.valid) return '차단';
   if (scenario.executionMode === 'isolated' || decision.isolatedStores.length > 0) return '격리 실행';
+  if (scenario.executionMode === 'gpu') return 'GPU 실행';
   if (scenario.executionMode === 'packaged') return '패키징 실행';
   return '공유 실행';
 }
@@ -312,6 +383,10 @@ function getExecutionSummary(
 
   if (scenario.executionMode === 'packaged') {
     return '실행 가능. 충돌하는 라이브러리 버전은 컨테이너 안에 패키징되어 있으므로 호스트 의존성 그래프를 바꾸지 않습니다.';
+  }
+
+  if (scenario.executionMode === 'gpu') {
+    return '실행 가능. CUDA 의존성은 컨테이너에 패키징되고, host/runtime이 제공하는 CUDA 가속기 계약을 통과했기 때문에 GPU 경로를 선택할 수 있습니다.';
   }
 
   return '실행 가능. 패키지 의존성과 store schema가 호스트와 맞기 때문에 공유 store 계약을 사용할 수 있습니다.';

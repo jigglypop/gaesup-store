@@ -120,6 +120,9 @@ const manifest: ContainerPackageManifest = {
     { name: 'date-fns', version: '^2.29.0', source: 'host' },
     { name: 'chart.js', version: '^3.9.0', source: 'bundled' }
   ],
+  accelerators: [
+    { kind: 'cuda', version: '>=12.0.0', capabilities: ['sm_80'] }
+  ],
   stores: [
     {
       storeId: 'orders',
@@ -141,6 +144,14 @@ const manifest: ContainerPackageManifest = {
 - `host`: host가 제공하는 의존성을 사용합니다. 버전이 맞아야 합니다.
 - `bundled`: 컨테이너가 의존성을 함께 패키징합니다. host 버전과 충돌하지 않습니다.
 
+`accelerators` 의미:
+
+- `cpu`: 기본 실행 경로입니다.
+- `webgpu`: host/runtime이 WebGPU를 제공해야 합니다.
+- `cuda`: host/runtime이 CUDA 실행 계층을 제공해야 합니다. 브라우저 직접 CUDA 실행을 뜻하지 않습니다.
+
+`version`은 semver range로 검증합니다. `capabilities`는 `sm_80`, `tensor-cores`, `shader-f16`처럼 host/runtime이 선언한 기능 목록과 비교합니다.
+
 ## CompatibilityGuard
 
 ```typescript
@@ -150,6 +161,9 @@ const guard = new CompatibilityGuard({
   abiVersion: '1.0.0',
   dependencies: [
     { name: 'chart.js', version: '4.4.3' }
+  ],
+  accelerators: [
+    { kind: 'cuda', version: '12.4.0', capabilities: ['sm_80', 'tensor-cores'] }
   ],
   stores: [
     {

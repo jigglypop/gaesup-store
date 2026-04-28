@@ -30,7 +30,8 @@ export function gaesupStore<T = any>(
         initialized = true;
       } catch (error) {
         // 이미 존재하는 경우 무시
-        if (!error.message.includes('already exists')) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (!message.includes('already exists')) {
           throw error;
         }
         initialized = true;
@@ -51,9 +52,9 @@ export function gaesupStore<T = any>(
     const callbackId = `svelte_${storeId}_${Math.random().toString(36).slice(2)}`;
     
     // WASM 상태 변경 감지
-    GaesupCore.registerCallback(callbackId, () => {
+    GaesupCore.registerCallback(callbackId, (nextState?: T) => {
       if (!isUpdating) {
-        const wasmState = GaesupCore.select(storeId, '');
+        const wasmState = nextState ?? GaesupCore.select(storeId, '');
         svelteSet(wasmState);
       }
     });

@@ -11,6 +11,9 @@ export default defineConfig({
     },
     rollupOptions: {
       external: [
+        '@gaesup-state/core-rust',
+        '@gaesup-state/core-rust/pkg-web/gaesup_state_core.js',
+        '@gaesup-state/core-rust/pkg-node/gaesup_state_core.js',
         '@wasmer/wasi',
         '@wasmer/wasmfs'
       ],

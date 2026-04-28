@@ -1,11 +1,19 @@
 {
   "name": "@gaesup-state/core-rust",
   "version": "0.2.0",
-  "main": "fallback.js",
-  "types": "fallback.d.ts",
+  "main": "pkg/gaesup_state_core.js",
+  "module": "pkg/gaesup_state_core.js",
+  "types": "pkg/gaesup_state_core.d.ts",
+  "scripts": {
+    "build": "pnpm run build:bundler && pnpm run build:web && pnpm run build:node",
+    "build:bundler": "wasm-pack build --target bundler --out-dir pkg -- --features wasm",
+    "build:web": "wasm-pack build --target web --out-dir pkg-web -- --features wasm",
+    "build:node": "wasm-pack build --target nodejs --out-dir pkg-node -- --features wasm",
+    "test": "wasm-pack test --chrome --headless"
+  },
   "files": [
-    "fallback.js",
-    "fallback.d.ts",
-    "pkg"
+    "pkg",
+    "pkg-web",
+    "pkg-node"
   ]
 } 

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { GaesupCore } from '../index';
+import { CompatibilityGuard, GaesupCore } from '../index';
 
 describe('GaesupCore', () => {
   const TEST_STORE_ID = 'test-store';
@@ -327,6 +327,60 @@ describe('GaesupCore', () => {
       await expect(
         GaesupCore.dispatch(TEST_STORE_ID, 'UNKNOWN_ACTION', {})
       ).resolves.not.toThrow();
+    });
+  });
+
+  describe('Compatibility guard accelerators', () => {
+    it('should allow a CUDA container when the host provides the required accelerator contract', () => {
+      const guard = new CompatibilityGuard({
+        abiVersion: '1.0.0',
+        accelerators: [
+          { kind: 'cuda', version: '12.4.0', capabilities: ['sm_80', 'tensor-cores'] }
+        ]
+      });
+
+      const decision = guard.validate({
+        manifestVersion: '1.0',
+        name: 'cuda-analytics',
+        version: '1.0.0',
+        gaesup: { abiVersion: '^1.0.0' },
+        dependencies: [
+          { name: 'onnxruntime-gpu', version: '^1.18.0', source: 'bundled' }
+        ],
+        accelerators: [
+          { kind: 'cuda', version: '>=12.0.0', capabilities: ['sm_80'] }
+        ]
+      });
+
+      expect(decision.valid).toBe(true);
+      expect(decision.errors).toHaveLength(0);
+      expect(decision.warnings).toEqual([
+        expect.objectContaining({ code: 'PACKAGE_DEPENDENCY_BUNDLED' })
+      ]);
+    });
+
+    it('should block a CUDA container when the host is missing a required capability', () => {
+      const guard = new CompatibilityGuard({
+        abiVersion: '1.0.0',
+        accelerators: [
+          { kind: 'cuda', version: '12.4.0', capabilities: ['sm_75'] }
+        ]
+      });
+
+      const decision = guard.validate({
+        manifestVersion: '1.0',
+        name: 'cuda-analytics',
+        version: '1.0.0',
+        gaesup: { abiVersion: '^1.0.0' },
+        accelerators: [
+          { kind: 'cuda', version: '>=12.0.0', capabilities: ['sm_80'] }
+        ]
+      });
+
+      expect(decision.valid).toBe(false);
+      expect(decision.errors).toEqual([
+        expect.objectContaining({ code: 'ACCELERATOR_CAPABILITY_MISSING' })
+      ]);
     });
   });
 

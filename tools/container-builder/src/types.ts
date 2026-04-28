@@ -29,6 +29,15 @@ export interface StoreDependencyContract {
   readonlyPaths?: string[]
 }
 
+export type AcceleratorKind = 'cpu' | 'webgpu' | 'cuda'
+
+export interface AcceleratorDependencyContract {
+  kind: AcceleratorKind
+  version?: string
+  optional?: boolean
+  capabilities?: string[]
+}
+
 export interface ContainerPermissionContract {
   network?: boolean
   storage?: 'none' | 'scoped' | 'host'
@@ -78,6 +87,7 @@ export interface ContainerManifest {
     minHostVersion?: string
   }
   dependencies: PackageDependencyContract[]
+  accelerators: AcceleratorDependencyContract[]
   stores: StoreDependencyContract[]
   permissions: ContainerPermissionContract
   allowedImports: string[]

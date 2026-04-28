@@ -1,7 +1,9 @@
 import type {
   ContainerPackageManifest,
   DependencyConflictPolicy,
+  AcceleratorDependencyContract,
   HostCompatibilityConfig,
+  HostAcceleratorContract,
   HostDependencyContract,
   PackageDependencyContract,
   RegisteredStoreSchema,
@@ -25,6 +27,7 @@ export class CompatibilityGuard {
       hostVersion: config.hostVersion || '0.0.0',
       abiVersion: config.abiVersion || '1.0.0',
       dependencies: config.dependencies || [],
+      accelerators: config.accelerators || [],
       stores: config.stores || [],
       defaultConflictPolicy: config.defaultConflictPolicy || 'reject'
     }
@@ -39,6 +42,7 @@ export class CompatibilityGuard {
     this.validateManifestShape(manifest, errors)
     this.validateAbi(manifest, errors)
     this.validatePackageDependencies(manifest.dependencies || [], errors, warnings)
+    this.validateAccelerators(manifest.accelerators || [], errors, warnings)
     this.validateStores(manifest.stores || [], errors, warnings, isolatedStores, readonlyStores)
 
     return {
@@ -213,6 +217,55 @@ export class CompatibilityGuard {
     }
   }
 
+  private validateAccelerators(
+    requiredAccelerators: AcceleratorDependencyContract[],
+    errors: ValidationError[],
+    warnings: ValidationWarning[]
+  ): void {
+    for (const required of requiredAccelerators) {
+      if (required.kind === 'cpu') {
+        continue
+      }
+
+      const provided = this.findAccelerator(required)
+
+      if (!provided) {
+        const issue = {
+          code: 'ACCELERATOR_MISSING',
+          message: `Missing host accelerator ${required.kind}${required.version ? `@${required.version}` : ''}`,
+          location: `accelerators.${required.kind}`
+        }
+
+        if (required.optional) {
+          warnings.push(issue)
+        } else {
+          errors.push(issue)
+        }
+        continue
+      }
+
+      if (required.version && provided.version && !isVersionCompatible(provided.version, required.version)) {
+        errors.push({
+          code: 'ACCELERATOR_VERSION_MISMATCH',
+          message: `Accelerator ${required.kind} requires ${required.version}, host provides ${provided.version}`,
+          location: `accelerators.${required.kind}`
+        })
+      }
+
+      const missingCapabilities = (required.capabilities || []).filter(
+        (capability) => !(provided.capabilities || []).includes(capability)
+      )
+
+      if (missingCapabilities.length > 0) {
+        errors.push({
+          code: 'ACCELERATOR_CAPABILITY_MISSING',
+          message: `Accelerator ${required.kind} is missing capabilities: ${missingCapabilities.join(', ')}`,
+          location: `accelerators.${required.kind}.capabilities`
+        })
+      }
+    }
+  }
+
   private handleStoreConflict(
     policy: DependencyConflictPolicy,
     storeId: string,
@@ -240,6 +293,10 @@ export class CompatibilityGuard {
 
   private findDependency(required: PackageDependencyContract): HostDependencyContract | undefined {
     return this.host.dependencies.find((dependency) => dependency.name === required.name)
+  }
+
+  private findAccelerator(required: AcceleratorDependencyContract): HostAcceleratorContract | undefined {
+    return this.host.accelerators.find((accelerator) => accelerator.kind === required.kind)
   }
 
   private findStore(required: StoreDependencyContract): RegisteredStoreSchema | undefined {

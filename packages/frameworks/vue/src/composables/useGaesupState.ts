@@ -32,8 +32,8 @@ export function defineStore<T extends Record<string, any>>(options: StoreDefinit
     const subscriptionId = ref<string | null>(null);
 
     // WASM 상태와 동기화
-    const syncFromWasm = () => {
-      const wasmState = GaesupCore.select(id, '') as T;
+    const syncFromWasm = (nextState?: T) => {
+      const wasmState = (nextState ?? GaesupCore.select(id, '')) as T;
       Object.assign(state, wasmState);
     };
 
@@ -162,8 +162,8 @@ export function useGaesupState<T = any>(
 
   // WASM 동기화
   const callbackId = `vue_simple_${storeId}_${Math.random().toString(36).slice(2)}`;
-  GaesupCore.registerCallback(callbackId, () => {
-    const wasmState = GaesupCore.select(storeId, '') as T;
+  GaesupCore.registerCallback(callbackId, (nextState?: T) => {
+    const wasmState = (nextState ?? GaesupCore.select(storeId, '')) as T;
     state.value = wasmState;
   });
   subscriptionId.value = GaesupCore.subscribe(storeId, '', callbackId);

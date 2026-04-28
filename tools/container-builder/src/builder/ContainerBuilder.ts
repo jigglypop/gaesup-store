@@ -30,6 +30,7 @@ export class ContainerBuilder {
         crossContainer: false
       },
       dependencies: [],
+      accelerators: [],
       stores: [],
       allowedImports: [],
       layers: [],
@@ -130,6 +131,11 @@ export class ContainerBuilder {
   addPackageDependency(dependency: NonNullable<ContainerManifest['dependencies']>[number]): void {
     this.manifest.dependencies = this.manifest.dependencies || []
     this.manifest.dependencies.push(dependency)
+  }
+
+  addAccelerator(accelerator: NonNullable<ContainerManifest['accelerators']>[number]): void {
+    this.manifest.accelerators = this.manifest.accelerators || []
+    this.manifest.accelerators.push(accelerator)
   }
 
   addStoreDependency(store: NonNullable<ContainerManifest['stores']>[number]): void {
@@ -270,6 +276,26 @@ export class ContainerBuilder {
               version,
               source: sourceArg === 'bundled' ? 'bundled' : 'host'
             })
+          }
+          break
+
+        case 'ACCELERATOR':
+          if (args[0]) {
+            const accelerator: NonNullable<ContainerManifest['accelerators']>[number] = {
+              kind: args[0] as any
+            }
+            const version = args[1]
+            const capabilities = args.slice(2).filter(Boolean)
+
+            if (version && version !== '-') {
+              accelerator.version = version
+            }
+
+            if (capabilities.length > 0) {
+              accelerator.capabilities = capabilities
+            }
+
+            this.addAccelerator(accelerator)
           }
           break
 
