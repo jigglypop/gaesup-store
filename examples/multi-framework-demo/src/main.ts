@@ -9,6 +9,7 @@ import {
   type SharedState
 } from './stores/sharedStore';
 import { mountAngularSidebar } from './components/angular/mountAngular';
+import { mountDependencyIsolationDemo } from './dependencyIsolationDemo';
 import { mountReactHeader } from './components/react/ReactHeader';
 import { mountSvelteMain } from './components/svelte/mountSvelte';
 import { mountVueFooter } from './components/vue/mountVue';
@@ -27,6 +28,8 @@ class MultiFrameworkApp {
       await initializeSharedStore();
       connectDevTools();
       this.mountAllComponents();
+      mountDependencyIsolationDemo('dependency-isolation');
+      this.setupPagination();
 
       this.unsubscribe = subscribeToStore((state) => {
         this.updateSharedStatus(state);
@@ -55,6 +58,28 @@ class MultiFrameworkApp {
     this.mount('Vue', () => mountVueFooter('vue-counter'));
     this.mount('Svelte', () => mountSvelteMain('svelte-counter'));
     this.mount('Angular', () => mountAngularSidebar('angular-counter'));
+  }
+
+  private setupPagination() {
+    const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-page-button]'));
+    const pages = {
+      counter: document.getElementById('page-counter'),
+      isolation: document.getElementById('page-isolation')
+    };
+
+    buttons.forEach((button) => {
+      button.addEventListener('click', () => {
+        const page = button.dataset.pageButton as keyof typeof pages;
+        for (const [pageName, element] of Object.entries(pages)) {
+          if (element) {
+            element.hidden = pageName !== page;
+          }
+        }
+        buttons.forEach((current) => {
+          current.setAttribute('aria-selected', String(current === button));
+        });
+      });
+    });
   }
 
   private mount(name: string, mountComponent: () => void) {
@@ -107,9 +132,9 @@ class MultiFrameworkApp {
     if (overlay) {
       overlay.innerHTML = `
         <div style="max-width: 520px; padding: 24px; text-align: center;">
-          <h2 style="color: #ef4444; margin: 0 0 12px;">Initialization failed</h2>
+          <h2 style="color: #ef4444; margin: 0 0 12px;">초기화 실패</h2>
           <p style="margin: 0 0 18px; color: #cbd5e1;">${message}</p>
-          <button onclick="location.reload()">Reload</button>
+          <button onclick="location.reload()">다시 불러오기</button>
         </div>
       `;
     }

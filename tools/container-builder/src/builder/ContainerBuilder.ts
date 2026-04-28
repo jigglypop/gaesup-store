@@ -262,10 +262,13 @@ export class ContainerBuilder {
 
         case 'DEPENDENCY':
           if (args[0]) {
-            const [depName, version = '*'] = args[0].split('@')
+            const [depName, inlineVersion] = args[0].split('@')
+            const version = inlineVersion || (args[1] && args[1] !== 'host' && args[1] !== 'bundled' ? args[1] : '*')
+            const sourceArg = args.find((arg) => arg === 'host' || arg === 'bundled')
             this.addPackageDependency({
               name: depName,
-              version
+              version,
+              source: sourceArg === 'bundled' ? 'bundled' : 'host'
             })
           }
           break

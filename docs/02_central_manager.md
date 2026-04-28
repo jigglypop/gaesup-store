@@ -1,44 +1,39 @@
-# Central Manager
+# 중앙 매니저
 
-`ContainerManager` is the host-side authority for WASM containers.
+`ContainerManager`는 WASM 컨테이너 실행을 담당하는 host 측 관리자입니다.
 
-## Responsibilities
+## 역할
 
-- Resolve package manifests.
-- Validate compatibility before instantiation.
-- Apply manifest defaults to runtime config.
-- Select the runtime adapter.
-- Track running container instances.
-- Expose metrics and lifecycle cleanup.
+- manifest 조회
+- compatibility 검증
+- runtime config 기본값 적용
+- WASM runtime 선택
+- container instance 추적
+- metrics 수집
+- cleanup 처리
 
-## Manifest Resolution
-
-The manager uses `config.manifest` when provided. Otherwise it attempts to resolve a manifest from the configured registry path:
+## 실행 흐름
 
 ```text
-/containers/{name}/manifest.json
+run(name, config)
+  -> manifest 결정
+  -> CompatibilityGuard 검증
+  -> manifest 기본값 적용
+  -> WASM module load
+  -> runtime instantiate
+  -> ContainerInstance 등록
 ```
 
-## Store-Aware Manager
+## Store-aware manager
 
-Use `createStoreAwareContainerManager()` when the host should automatically pass registered store schemas into compatibility checks:
+등록된 store schema를 자동으로 compatibility config에 넣고 싶으면 `createStoreAwareContainerManager`를 사용합니다.
 
 ```typescript
-import { GaesupCore, createStoreAwareContainerManager } from '@gaesup-state/core';
-
-GaesupCore.registerStoreSchema({
-  storeId: 'app',
-  schemaId: 'counter-state',
-  schemaVersion: '1.0.0'
-});
-
 const manager = createStoreAwareContainerManager({
   defaultRuntime: 'browser'
 });
 ```
 
-## Failure Behavior
+## 실패 정책
 
-The manager fails closed. If a package asks for a dependency, schema, permission, or conflict policy that the host cannot satisfy, the container does not start.
-
-This protects shared stores from silent drift.
+매니저는 fail-closed 방식입니다. 실행 전 계약이 맞지 않으면 컨테이너를 시작하지 않습니다.

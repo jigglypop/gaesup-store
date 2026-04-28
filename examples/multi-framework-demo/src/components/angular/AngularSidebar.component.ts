@@ -30,13 +30,13 @@ export class AngularSidebarComponent {
       <article class="counter-card" style="--accent: #dd0031">
         <div>
           <div class="framework-name">Angular</div>
-          <div class="card-title">Class subscriber</div>
-          <p class="card-copy">Uses an Angular-like class component bound to the shared store.</p>
+          <div class="card-title">Class 구독자</div>
+          <p class="card-copy">Angular-like class component가 공유 store에 바인딩됩니다.</p>
         </div>
 
         <div>
           <div class="count-value" data-counter="angular">${this.state.count}</div>
-          <div class="last-update" data-last-writer>Last writer: ${this.state.framework}</div>
+          <div class="last-update" data-last-writer>마지막 작성자: ${this.state.framework}</div>
           <div class="button-row">
             <button class="primary" data-action="angular-inc">+1</button>
             <button data-action="angular-dec">-1</button>
@@ -68,7 +68,7 @@ export class AngularSidebarComponent {
     }
 
     if (writer) {
-      writer.textContent = `Last writer: ${this.state.framework}`;
+      writer.textContent = `마지막 작성자: ${this.state.framework}`;
     }
   }
 }

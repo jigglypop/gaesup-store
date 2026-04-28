@@ -1,42 +1,30 @@
-# Apartment Routing
+# 라우팅 및 격리 슬롯
 
-This document describes the intended routing model for isolating multiple frontend containers in one host page.
+이 문서는 향후 여러 컨테이너를 한 host 화면에서 분리해 배치하는 모델을 설명합니다.
 
-## Concept
+## 개념
 
-An apartment is a logical slot where a container can run with a scoped state contract and permission set.
+격리 슬롯은 특정 컨테이너가 실행되는 논리적 영역입니다.
 
 ```text
-Host page
-  -> Apartment route
-  -> Container manifest
-  -> Store schema contract
-  -> Framework view
+route -> slot -> container manifest -> store schema -> framework view
 ```
 
-## Current Repository State
+## 현재 상태
 
-The repository currently implements the lower-level primitives:
+현재 저장소는 full router를 제공하지 않습니다. 대신 다음 기반 기능이 구현되어 있습니다.
 
-- Manifest validation.
-- Store schema registry.
-- Container lifecycle.
-- Framework subscriptions.
+- store schema registry
+- container manifest
+- compatibility guard
+- framework subscription
 
-It does not yet include a full router package for apartments. Until that exists, route-level isolation should be implemented by the host app by creating separate store ids and separate manager instances.
+## 권장 방식
 
-## Recommended Pattern
+tenant나 route별로 store id를 분리합니다.
 
 ```typescript
-const storeId = `tenant:${tenantId}:app`;
-
-await GaesupCore.createStore(storeId, initialState, {
-  schema: {
-    storeId,
-    schemaId: 'tenant-app-state',
-    schemaVersion: '1.0.0'
-  }
-});
+const storeId = `tenant:${tenantId}:orders`;
 ```
 
-Pass that `storeId` in the container manifest's `stores` section.
+컨테이너 manifest의 `stores` 항목도 같은 `storeId`를 바라보게 합니다.

@@ -1,61 +1,35 @@
-# Architecture Overview
+# 아키텍처 개요
 
-Gaesup-State has three runtime layers.
+Gaesup-State는 세 경계를 분리합니다.
 
-## 1. Store Boundary
+## Store 경계
 
-`GaesupCore` owns named stores. A store is addressed by `storeId`, can expose schema metadata, and emits updates through callback subscriptions.
+`GaesupCore`는 이름 있는 store를 관리합니다. store는 `storeId`로 식별되고, schema 정보를 가질 수 있으며, 여러 프레임워크 어댑터가 같은 store를 구독할 수 있습니다.
 
-Primary operations:
-
-- `createStore(storeId, initialState, options)`
-- `dispatch(storeId, actionType, payload)`
-- `select(storeId, path)`
-- `subscribe(storeId, path, callbackId)`
-- `registerStoreSchema(schema)`
-- `getStoreSchemas()`
-
-The store boundary is intentionally explicit. Framework adapters do not own separate state; they subscribe to the same store and render snapshots.
-
-## 2. Container Boundary
-
-`ContainerManager` loads WASM containers. Before it instantiates a module, it resolves and validates a `ContainerPackageManifest`.
-
-The manager validates:
-
-- ABI version.
-- Host package dependencies.
-- Store schema dependencies.
-- Allowed imports.
-- Permission metadata.
-- Conflict policy.
-
-## 3. Framework Boundary
-
-React, Vue, Svelte, and Angular packages provide adapter APIs over the store and container boundary. They should not bypass the core package by importing source files directly. Package builds emit declarations into `dist`, and framework tsconfig files resolve core through those declarations.
-
-## Data Flow
+흐름:
 
 ```text
-User interaction
-  -> Framework adapter
-  -> GaesupCore.dispatch()
-  -> Store update
-  -> Subscriptions notify callbacks
-  -> React/Vue/Svelte/Angular render the same snapshot
+dispatch -> store update -> callback notification -> framework render
 ```
 
-For WASM packages:
+## Container 경계
 
-```text
-ContainerManager.run()
-  -> Resolve manifest
-  -> CompatibilityGuard.validate()
-  -> Apply manifest defaults
-  -> Instantiate WASM runtime
-  -> Register container instance
-```
+`ContainerManager`는 WASM 컨테이너를 실행하기 전에 manifest를 확인합니다.
 
-## Design Rule
+검증 항목:
 
-State must not be inferred from dependency containers. A container declares the store schemas it needs; the host validates those declarations; only then can the container run.
+- Gaesup ABI
+- host 의존성
+- bundled 의존성
+- store schema
+- import 목록
+- 권한 선언
+- 충돌 정책
+
+## Framework 경계
+
+React, Vue, Svelte, Angular 패키지는 같은 store를 각 프레임워크 방식으로 구독합니다. 프레임워크별 local state가 아니라 Gaesup store snapshot을 렌더링해야 상태가 어긋나지 않습니다.
+
+## 핵심 원칙
+
+컨테이너는 실행 전에 계약을 밝혀야 합니다. 의존성과 store schema가 맞는지 확인하지 않은 패키지는 공유 상태에 접근하면 안 됩니다.

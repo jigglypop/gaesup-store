@@ -1,8 +1,8 @@
-# API Reference
+# API 레퍼런스
 
-This reference covers the APIs that are currently wired in the repository.
+이 문서는 현재 저장소에서 실제로 연결되어 있는 핵심 API를 정리합니다.
 
-## Core Store API
+## Store API
 
 ```typescript
 import { GaesupCore } from '@gaesup-state/core';
@@ -14,164 +14,185 @@ import { GaesupCore } from '@gaesup-state/core';
 await GaesupCore.createStore(storeId, initialState, options?);
 ```
 
-Options:
+schema를 함께 등록할 수 있습니다.
 
 ```typescript
-{
-  schema?: {
-    storeId: string;
-    schemaId: string;
-    schemaVersion: string;
-    compatRange?: string;
+await GaesupCore.createStore('orders', { items: [] }, {
+  schema: {
+    storeId: 'orders',
+    schemaId: 'orders-state',
+    schemaVersion: '1.2.0'
   }
-}
+});
 ```
-
-### dispatch
-
-```typescript
-await GaesupCore.dispatch(storeId, actionType, payload);
-```
-
-Built-in action types:
-
-- `SET`
-- `MERGE`
-- `UPDATE`
-- `DELETE`
-- `BATCH`
 
 ### select
 
 ```typescript
-const value = GaesupCore.select(storeId, path);
+const fullState = GaesupCore.select('orders', '');
+const items = GaesupCore.select('orders', 'items');
 ```
 
-Use an empty path to read the full store.
+빈 path는 전체 store를 의미합니다.
+
+### dispatch
+
+```typescript
+await GaesupCore.dispatch('orders', 'MERGE', { items: [] });
+```
+
+기본 action type:
+
+- `SET`: 전체 상태 교체
+- `MERGE`: 객체 부분 병합
+- `UPDATE`: 특정 path 값 변경
+- `DELETE`: 특정 path 삭제
+- `BATCH`: 여러 업데이트 묶음 실행
 
 ### subscribe
 
 ```typescript
-GaesupCore.registerCallback(callbackId, callback);
-const subscriptionId = GaesupCore.subscribe(storeId, path, callbackId);
+const callbackId = 'orders-listener';
+
+GaesupCore.registerCallback(callbackId, () => {
+  console.log(GaesupCore.select('orders', ''));
+});
+
+const subscriptionId = GaesupCore.subscribe('orders', '', callbackId);
+```
+
+정리:
+
+```typescript
 GaesupCore.unsubscribe(subscriptionId);
 GaesupCore.unregisterCallback(callbackId);
 ```
 
-Register callbacks before subscribing.
+중요: callback은 `subscribe`보다 먼저 등록해야 합니다.
 
-### snapshots
+### snapshot
 
 ```typescript
-const id = await GaesupCore.createSnapshot(storeId);
-await GaesupCore.restoreSnapshot(storeId, id);
+const snapshotId = await GaesupCore.createSnapshot('orders');
+await GaesupCore.restoreSnapshot('orders', snapshotId);
 ```
 
 ### metrics
 
 ```typescript
-const metrics = await GaesupCore.getMetrics(storeId);
+const metrics = await GaesupCore.getMetrics('orders');
 ```
 
-## Store Schema API
+대표 필드:
+
+- `subscriber_count`
+- `total_selects`
+- `total_updates`
+- `total_dispatches`
+- `avg_dispatch_time`
+- `memory_usage`
+
+## Store schema API
 
 ```typescript
 GaesupCore.registerStoreSchema({
-  storeId: 'app',
-  schemaId: 'counter-state',
-  schemaVersion: '1.0.0'
+  storeId: 'orders',
+  schemaId: 'orders-state',
+  schemaVersion: '1.2.0'
 });
 
 const schemas = GaesupCore.getStoreSchemas();
 ```
 
-## Container API
+schema 정보는 container manifest의 store dependency와 비교됩니다.
+
+## Container manifest
 
 ```typescript
-import { ContainerManager } from '@gaesup-state/core';
+import type { ContainerPackageManifest } from '@gaesup-state/core';
+
+const manifest: ContainerPackageManifest = {
+  manifestVersion: '1.0',
+  name: 'orders-widget',
+  version: '1.0.0',
+  gaesup: { abiVersion: '^1.0.0' },
+  dependencies: [
+    { name: 'date-fns', version: '^2.29.0', source: 'host' },
+    { name: 'chart.js', version: '^3.9.0', source: 'bundled' }
+  ],
+  stores: [
+    {
+      storeId: 'orders',
+      schemaId: 'orders-state',
+      schemaVersion: '^1.2.0',
+      conflictPolicy: 'reject'
+    }
+  ],
+  allowedImports: ['env.memory'],
+  permissions: {
+    network: false,
+    storage: 'scoped'
+  }
+};
 ```
 
-### Constructor
+`source` 의미:
 
-```typescript
-const manager = new ContainerManager({
-  registry?: string;
-  maxContainers?: number;
-  defaultRuntime?: 'browser' | 'nodejs' | 'wasmtime' | 'wasmedge' | 'wasmer';
-  cacheSize?: number;
-  debugMode?: boolean;
-  enableMetrics?: boolean;
-  networkTimeout?: number;
-  compatibility?: HostCompatibilityConfig;
-});
-```
+- `host`: host가 제공하는 의존성을 사용합니다. 버전이 맞아야 합니다.
+- `bundled`: 컨테이너가 의존성을 함께 패키징합니다. host 버전과 충돌하지 않습니다.
 
-### run
-
-```typescript
-const instance = await manager.run(name, config);
-```
-
-`config.manifest` can provide the package manifest directly.
-
-### list
-
-```typescript
-const containers = manager.list();
-```
-
-### getMetrics
-
-```typescript
-const metrics = manager.getMetrics();
-```
-
-### cleanup
-
-```typescript
-await manager.cleanup();
-```
-
-## Compatibility API
+## CompatibilityGuard
 
 ```typescript
 import { CompatibilityGuard } from '@gaesup-state/core';
-```
 
-```typescript
 const guard = new CompatibilityGuard({
-  abiVersion: '1.0',
-  dependencies: [{ name: 'lodash', version: '4.17.21' }],
-  stores: [{ storeId: 'app', schemaId: 'counter-state', schemaVersion: '1.0.0' }]
+  abiVersion: '1.0.0',
+  dependencies: [
+    { name: 'chart.js', version: '4.4.3' }
+  ],
+  stores: [
+    {
+      storeId: 'orders',
+      schemaId: 'orders-state',
+      schemaVersion: '1.2.0'
+    }
+  ]
 });
 
 const decision = guard.validate(manifest);
 ```
 
-`decision.valid` must be true before a container can run.
+검증 결과:
 
-## Framework APIs
+- `decision.valid`: 실행 가능 여부
+- `decision.errors`: 차단해야 하는 문제
+- `decision.warnings`: 실행은 가능하지만 표시할 정보
+- `decision.isolatedStores`: 격리 store로 실행해야 하는 store 목록
+- `decision.readonlyStores`: 읽기 전용으로 다뤄야 하는 store 목록
 
-React:
-
-```typescript
-import { useGaesupState } from '@gaesup-state/react';
-```
-
-Vue:
+## ContainerManager
 
 ```typescript
-import { useGaesupState } from '@gaesup-state/vue';
+import { ContainerManager } from '@gaesup-state/core';
+
+const manager = new ContainerManager({
+  defaultRuntime: 'browser',
+  compatibility: {
+    abiVersion: '1.0.0',
+    dependencies: [],
+    stores: []
+  }
+});
 ```
 
-Svelte:
+실행:
 
 ```typescript
-import { gaesupStore } from '@gaesup-state/svelte';
+const container = await manager.run('orders-widget:1.0.0', {
+  runtime: 'browser',
+  manifest
+});
 ```
 
-Angular:
-
-```typescript
-import { ContainerManagerService, ContainerService } from '@gaesup-state/angular';
-```
+`ContainerManager`는 WASM 인스턴스 생성 전에 manifest를 검증합니다. 검증 실패 시 컨테이너는 실행되지 않습니다.

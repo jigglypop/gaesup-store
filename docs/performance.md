@@ -1,59 +1,59 @@
-# Performance Notes
+# 성능 메모
 
-## Latest Local Measurements
+## 최근 측정 결과
 
-Measured on the multi-framework demo after simplifying it to four shared counters.
+멀티 프레임워크 데모를 단순한 네 카운터 구조로 바꾼 뒤 측정한 값입니다.
 
 ```text
-Initial ready time: about 827ms
-Four counters visible after click, p50: about 32ms
-Four counters visible after click, p95: about 65ms
-Direct core dispatch, p50: about 0.13ms
-Direct core dispatch, p95: about 0.29ms
+초기 ready: 약 827ms
+네 카운터 전체 반영 p50: 약 32ms
+네 카운터 전체 반영 p95: 약 65ms
+core dispatch p50: 약 0.13ms
+core dispatch p95: 약 0.29ms
 ```
 
-## Interpretation
+## 해석
 
-The store dispatch path is not the limiting factor. Most visible latency comes from:
+store dispatch 자체는 빠릅니다. 체감 지연은 대부분 다음에서 발생합니다.
 
-- Browser event handling.
-- Framework render scheduling.
-- DOM updates across four framework roots.
+- 브라우저 click event 처리
+- framework별 render scheduling
+- 네 framework root의 DOM 업데이트
+- 개발 서버와 sourcemap 비용
 
-## What Improved
+즉, 현재 병목은 core state update가 아니라 화면 반영 비용입니다.
 
-The previous demo mixed a header, sidebar, main panel, footer, metrics polling, history rendering, and duplicate ids. The simplified demo:
+## 이전 데모에서 느렸던 이유
 
-- Mounts each framework into an empty root.
-- Uses one counter card per framework.
-- Removes duplicate ids from interactive elements.
-- Keeps shared status outside framework roots.
+이전 화면은 header, sidebar, main, footer, metrics polling, history rendering이 섞여 있었습니다. 또한 같은 id를 가진 초기 HTML과 실제 framework 렌더 결과가 공존해서 클릭 타깃과 측정값이 불안정했습니다.
 
-This cut visible p50 update time from roughly 68ms to roughly 32ms.
+현재 구조는 다음을 지킵니다.
 
-## Benchmark Script Shape
+- framework mount point는 비어 있음
+- 각 framework는 하나의 counter card만 렌더링
+- interactive id 중복 없음
+- 네 카드가 같은 store 값만 표시
+- 의존성 격리 예제는 별도 페이지로 분리
 
-Use Playwright to measure:
+## 측정 기준
+
+브라우저에서 다음 조건을 확인했습니다.
 
 ```typescript
 await page.locator('[data-action="react-inc"]').click();
+
 await page.waitForFunction(() =>
   [...document.querySelectorAll('[data-counter]')]
     .every((node) => node.textContent?.trim() === '1')
 );
 ```
 
-Measure core dispatch separately:
+즉, 버튼 클릭 후 네 framework 카드가 모두 같은 값을 표시할 때까지의 시간입니다.
 
-```typescript
-const t0 = performance.now();
-await window.GaesupCore.dispatch('multi-framework-demo', 'MERGE', { count: next });
-const elapsed = performance.now() - t0;
-```
+## 최적화 방향
 
-## Guidance
-
-- Keep demo and benchmark DOM simple.
-- Avoid polling when subscriptions can update state.
-- Keep history arrays bounded.
-- Use path subscriptions when components only need a small part of a store.
+- store에는 여러 framework가 공유해야 하는 값만 둡니다.
+- UI local state는 각 framework에 남겨둡니다.
+- 큰 객체 전체를 자주 dispatch하지 않습니다.
+- 가능한 경우 path 단위 subscription을 사용합니다.
+- dependency isolation 검증은 실행 전에 끝냅니다.

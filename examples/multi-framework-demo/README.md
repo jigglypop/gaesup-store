@@ -1,82 +1,88 @@
-# Gaesup-State Multi-Framework Demo
+# Gaesup-State 멀티 프레임워크 데모
 
-This demo shows one shared Gaesup store rendered by four framework adapters:
+이 데모는 하나의 Gaesup store를 React, Vue, Svelte, Angular-like 컴포넌트가 동시에 구독하는 모습을 보여줍니다.
+
+## 구성
+
+데모는 두 페이지로 구성됩니다.
+
+### 1. 공유 카운터
+
+네 개의 카드가 있습니다.
 
 - React
 - Vue
 - Svelte
-- Angular-like class component
+- Angular-like
 
-Each card has its own `+1`, `-1`, and `Reset` buttons. Pressing any button updates the same store, and all four cards update to the same count.
+각 카드에는 `+1`, `-1`, `Reset` 버튼이 있습니다. 어느 카드의 버튼을 눌러도 같은 `multi-framework-demo` store가 업데이트되고, 네 카드가 모두 같은 count를 표시합니다.
 
-## Why This Demo Exists
+### 2. 의존성 격리 확인
 
-The demo is intentionally simple. It is meant to make state consistency visible:
+컨테이너 manifest를 실행 전에 검증하는 예제입니다.
 
-- One store id: `multi-framework-demo`.
-- Four independent framework roots.
-- One shared count.
-- No duplicate interactive ids.
-- No hidden local counter state per framework.
+표시되는 상태:
 
-This makes it easier to see whether dependency boundaries, framework adapters, and store subscriptions are behaving correctly.
+- `공유 실행`: host 의존성과 store schema가 모두 맞아 shared store 사용 가능
+- `패키징 실행`: 컨테이너가 자기 의존성을 함께 패키징해서 host 버전과 충돌하지 않음
+- `격리 실행`: 컨테이너는 실행 가능하지만 host shared store schema와 맞지 않아 격리 store 사용
+- `차단`: host 의존성을 쓰겠다고 했지만 버전이 맞지 않아 실행 불가
 
-## Run
+## 실행
 
-From the repository root:
+저장소 루트에서 실행합니다.
 
 ```bash
 pnpm --filter @gaesup-state/multi-framework-demo run dev -- --host 0.0.0.0
 ```
 
-Open:
+브라우저에서 엽니다.
 
 ```text
 http://localhost:3000/
 ```
 
-## What to Check
+## 확인 방법
 
-1. The page loads without browser console errors.
-2. All four counters start at the same value.
-3. Click the React increment button. React, Vue, Svelte, and Angular should all show the same next value.
-4. Repeat from Vue, Svelte, and Angular buttons.
-5. The top shared count should match every card.
+1. 공유 카운터 페이지에서 React의 `+1`을 누릅니다.
+2. 네 카드가 모두 `1`이 되는지 확인합니다.
+3. Vue, Svelte, Angular-like 버튼도 각각 눌러봅니다.
+4. 의존성 격리 확인 페이지로 이동합니다.
+5. `공유 실행`, `패키징 실행`, `격리 실행`, `차단` 네 가지 결과를 확인합니다.
 
-## Local Measurement
-
-After simplification, a local Playwright smoke test measured:
-
-```text
-Initial ready time: about 827ms
-All four counters visible after click, p50: about 32ms
-All four counters visible after click, p95: about 65ms
-```
-
-The core dispatch path is much faster than the visible UI update. Most latency comes from browser scheduling and rendering four framework roots.
-
-## Files
+## 주요 파일
 
 ```text
 src/main.ts
-  Initializes the shared store, mounts all framework roots, and updates shared metrics.
+  store 초기화, 페이지 전환, 프레임워크 mount, metric 갱신을 담당합니다.
 
 src/stores/sharedStore.ts
-  Defines the shared state, dispatch helpers, metrics helpers, and subscriptions.
+  공유 store와 dispatch helper를 정의합니다.
+
+src/dependencyIsolationDemo.ts
+  manifest 의존성 격리 예제를 렌더링합니다.
 
 src/components/react/ReactHeader.tsx
-  React counter card.
+  React 카운터 카드입니다.
 
 src/components/vue/VueFooter.vue
-  Vue counter card.
+  Vue 카운터 카드입니다.
 
 src/components/svelte/SvelteMain.svelte
-  Svelte counter card.
+  Svelte 카운터 카드입니다.
 
 src/components/angular/AngularSidebar.component.ts
-  Angular-like counter card.
+  Angular-like 카운터 카드입니다.
 ```
 
-## Notes
+## 성능 메모
 
-This demo uses the JavaScript fallback path when a real WASM build is not present. That is enough to test the frontend state and subscription behavior. Rebuilding the Rust/WASM package is a separate workflow.
+단순화된 네 카운터 구조에서 로컬 측정 결과는 다음과 같습니다.
+
+```text
+초기 ready: 약 827ms
+네 카운터 전체 반영 p50: 약 32ms
+네 카운터 전체 반영 p95: 약 65ms
+```
+
+core dispatch 자체보다 브라우저 이벤트 처리와 네 프레임워크 루트 렌더링 비용이 더 큽니다.

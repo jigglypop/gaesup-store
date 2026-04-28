@@ -1,58 +1,53 @@
-# State Management
+# 상태 관리
 
-Gaesup-State exposes named stores through `GaesupCore`.
+Gaesup-State의 상태는 이름 있는 store로 관리됩니다.
 
-## Create
+## 생성
 
 ```typescript
-await GaesupCore.createStore('app', { count: 0 }, {
+await GaesupCore.createStore('app', { count: 0 });
+```
+
+schema 포함:
+
+```typescript
+await GaesupCore.createStore('orders', { items: [] }, {
   schema: {
-    storeId: 'app',
-    schemaId: 'counter-state',
-    schemaVersion: '1.0.0'
+    storeId: 'orders',
+    schemaId: 'orders-state',
+    schemaVersion: '1.2.0'
   }
 });
 ```
 
-## Read
+## 읽기
 
 ```typescript
-const state = GaesupCore.select('app', '');
-const count = GaesupCore.select('app', 'count');
+GaesupCore.select('orders', '');
+GaesupCore.select('orders', 'items');
 ```
 
-## Write
+## 쓰기
 
 ```typescript
-await GaesupCore.dispatch('app', 'MERGE', { count: 1 });
-await GaesupCore.dispatch('app', 'UPDATE', { path: 'count', value: 2 });
-await GaesupCore.dispatch('app', 'SET', { count: 0 });
+await GaesupCore.dispatch('orders', 'MERGE', { items: [] });
+await GaesupCore.dispatch('orders', 'UPDATE', { path: 'items', value: [] });
+await GaesupCore.dispatch('orders', 'SET', { items: [] });
 ```
 
-## Subscribe
+## 구독
 
 ```typescript
-const callbackId = 'listener';
-
-GaesupCore.registerCallback(callbackId, () => {
-  console.log(GaesupCore.select('app', ''));
+GaesupCore.registerCallback('listener', () => {
+  console.log(GaesupCore.select('orders', ''));
 });
 
-const subscriptionId = GaesupCore.subscribe('app', '', callbackId);
+const id = GaesupCore.subscribe('orders', '', 'listener');
 ```
 
-Always register the callback before subscribing.
-
-## Snapshots
+구독 해제:
 
 ```typescript
-const snapshotId = await GaesupCore.createSnapshot('app');
-await GaesupCore.restoreSnapshot('app', snapshotId);
-```
-
-## Persistence
-
-```typescript
-await GaesupCore.persist_store('app', 'app-state');
-await GaesupCore.hydrate_store('app', 'app-state');
+GaesupCore.unsubscribe(id);
+GaesupCore.unregisterCallback('listener');
 ```

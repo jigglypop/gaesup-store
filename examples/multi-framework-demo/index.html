@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Gaesup-State Multi-Framework Counter Demo</title>
+  <title>Gaesup-State 멀티 프레임워크 카운터 데모</title>
   <meta http-equiv="Cross-Origin-Opener-Policy" content="same-origin">
   <meta http-equiv="Cross-Origin-Embedder-Policy" content="require-corp">
   <style>
@@ -86,6 +86,26 @@
       border-bottom: 1px solid rgba(255, 255, 255, 0.1);
     }
 
+    .pager {
+      display: flex;
+      gap: 10px;
+      padding: 14px clamp(20px, 4vw, 56px);
+      background: #0f171f;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .pager button {
+      width: auto;
+      min-width: 168px;
+      padding: 0 18px;
+    }
+
+    .pager button[aria-selected="true"] {
+      background: #f7c873;
+      border-color: #f7c873;
+      color: #101820;
+    }
+
     .metric {
       padding: 14px clamp(16px, 3vw, 32px);
       background: #111b24;
@@ -109,6 +129,10 @@
       grid-template-columns: repeat(4, minmax(220px, 1fr));
       gap: 1px;
       background: rgba(255, 255, 255, 0.1);
+    }
+
+    .page-panel[hidden] {
+      display: none;
     }
 
     .mount {
@@ -202,6 +226,206 @@
       color: #e8eef2;
     }
 
+    .isolation-page {
+      padding: clamp(20px, 4vw, 56px);
+      background: #14202a;
+      min-height: 520px;
+    }
+
+    .section-heading {
+      display: flex;
+      justify-content: space-between;
+      gap: 24px;
+      margin-bottom: 24px;
+    }
+
+    .section-heading h2 {
+      margin: 0;
+      font-size: clamp(24px, 3vw, 36px);
+    }
+
+    .section-heading p {
+      margin: 10px 0 0;
+      max-width: 820px;
+      color: #a9bbc7;
+      line-height: 1.55;
+    }
+
+    .isolation-layout {
+      display: grid;
+      grid-template-columns: minmax(260px, 340px) 1fr;
+      gap: 16px;
+      align-items: start;
+    }
+
+    .host-card,
+    .scenario-card {
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 8px;
+      background: #101820;
+      padding: 18px;
+    }
+
+    .host-card h3,
+    .host-card h4,
+    .scenario-card h3 {
+      margin: 0;
+    }
+
+    .host-card h4 {
+      margin-top: 22px;
+      color: #d7e2ea;
+      font-size: 14px;
+      text-transform: uppercase;
+    }
+
+    .contract-list {
+      display: grid;
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    .contract-list div,
+    .manifest-grid div {
+      display: grid;
+      gap: 4px;
+      padding: 12px;
+      border-radius: 8px;
+      background: #14202a;
+    }
+
+    .contract-list span,
+    .manifest-grid span {
+      color: #899ba8;
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+
+    .host-card ul {
+      list-style: none;
+      margin: 10px 0 0;
+      padding: 0;
+      display: grid;
+      gap: 8px;
+    }
+
+    .host-card li {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      color: #a9bbc7;
+      font-size: 14px;
+    }
+
+    code {
+      color: #f7c873;
+      font-family: "SFMono-Regular", Consolas, monospace;
+    }
+
+    .scenario-list {
+      display: grid;
+      gap: 16px;
+    }
+
+    .scenario-card {
+      border-top: 4px solid #ef6868;
+    }
+
+    .scenario-card.pass {
+      border-top-color: #42d392;
+    }
+
+    .scenario-card.packaged {
+      border-top-color: #61dafb;
+    }
+
+    .scenario-card.isolated {
+      border-top-color: #f7c873;
+    }
+
+    .scenario-topline {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .scenario-topline span {
+      padding: 5px 10px;
+      border-radius: 999px;
+      background: rgba(239, 104, 104, 0.14);
+      color: #ffb0b0;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .scenario-card.pass .scenario-topline span {
+      background: rgba(66, 211, 146, 0.14);
+      color: #8df0c2;
+    }
+
+    .scenario-card.packaged .scenario-topline span {
+      background: rgba(97, 218, 251, 0.14);
+      color: #a8edff;
+    }
+
+    .scenario-card.isolated .scenario-topline span {
+      background: rgba(247, 200, 115, 0.14);
+      color: #ffe0a3;
+    }
+
+    .scenario-card p {
+      color: #a9bbc7;
+      line-height: 1.5;
+      margin: 10px 0 16px;
+    }
+
+    .manifest-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .decision-details {
+      display: grid;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .decision-error,
+    .decision-ok,
+    .decision-warning,
+    .decision-isolated {
+      padding: 12px;
+      border-radius: 8px;
+      background: rgba(239, 104, 104, 0.08);
+      color: #ffd3d3;
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    .decision-error {
+      display: grid;
+      gap: 5px;
+    }
+
+    .decision-warning {
+      display: grid;
+      gap: 5px;
+      background: rgba(97, 218, 251, 0.08);
+      color: #d8f7ff;
+    }
+
+    .decision-ok {
+      background: rgba(66, 211, 146, 0.08);
+      color: #c9f7df;
+    }
+
+    .decision-isolated {
+      background: rgba(247, 200, 115, 0.08);
+      color: #ffe8bd;
+    }
+
     .loading-overlay {
       position: fixed;
       inset: 0;
@@ -219,6 +443,11 @@
     @media (max-width: 1080px) {
       .counter-grid {
         grid-template-columns: repeat(2, minmax(220px, 1fr));
+      }
+
+      .isolation-layout,
+      .manifest-grid {
+        grid-template-columns: 1fr;
       }
 
       .metrics-bar {
@@ -240,24 +469,28 @@
         width: 100%;
         text-align: left;
       }
+
+      .pager {
+        flex-direction: column;
+      }
     }
   </style>
 </head>
 <body>
-  <div id="loading-overlay" class="loading-overlay">Loading framework counters...</div>
+  <div id="loading-overlay" class="loading-overlay">프레임워크 카운터 로딩 중...</div>
 
   <div class="shell">
     <header class="topbar">
       <div class="title-row">
         <div>
-          <h1>Gaesup-State shared counter</h1>
+          <h1>Gaesup-State 공유 카운터</h1>
           <p class="subtitle">
-            Four framework adapters subscribe to one Gaesup store. Press any button and React,
-            Vue, Svelte, and Angular update from the same WASM-backed state boundary.
+            네 프레임워크 어댑터가 하나의 Gaesup store를 구독합니다. 어느 버튼을 눌러도
+            React, Vue, Svelte, Angular-like 카드가 같은 WASM 기반 상태 경계에서 함께 갱신됩니다.
           </p>
         </div>
         <div class="shared-count">
-          <span>Shared count</span>
+          <span>공유 count</span>
           <strong id="shared-count">0</strong>
         </div>
       </div>
@@ -265,32 +498,42 @@
 
     <section class="metrics-bar" aria-label="Runtime metrics">
       <div class="metric">
-        <div class="metric-label">Subscribers</div>
+        <div class="metric-label">구독자</div>
         <div class="metric-value" id="metric-subscribers">0</div>
       </div>
       <div class="metric">
-        <div class="metric-label">Dispatches</div>
+        <div class="metric-label">Dispatch</div>
         <div class="metric-value" id="metric-dispatches">0</div>
       </div>
       <div class="metric">
-        <div class="metric-label">Average dispatch</div>
+        <div class="metric-label">평균 dispatch</div>
         <div class="metric-value" id="metric-dispatch-time">0ms</div>
       </div>
       <div class="metric">
-        <div class="metric-label">Last writer</div>
+        <div class="metric-label">마지막 작성자</div>
         <div class="metric-value" id="metric-framework">None</div>
       </div>
     </section>
 
-    <main class="counter-grid">
-      <section id="react-counter" class="mount" aria-label="React counter"></section>
-      <section id="vue-counter" class="mount" aria-label="Vue counter"></section>
-      <section id="svelte-counter" class="mount" aria-label="Svelte counter"></section>
-      <section id="angular-counter" class="mount" aria-label="Angular counter"></section>
+    <nav class="pager" aria-label="Demo pages">
+      <button type="button" data-page-button="counter" aria-selected="true">공유 카운터</button>
+      <button type="button" data-page-button="isolation" aria-selected="false">의존성 격리</button>
+    </nav>
+
+    <main>
+      <section id="page-counter" class="page-panel counter-grid">
+        <section id="react-counter" class="mount" aria-label="React counter"></section>
+        <section id="vue-counter" class="mount" aria-label="Vue counter"></section>
+        <section id="svelte-counter" class="mount" aria-label="Svelte counter"></section>
+        <section id="angular-counter" class="mount" aria-label="Angular counter"></section>
+      </section>
+      <section id="page-isolation" class="page-panel" hidden>
+        <div id="dependency-isolation"></div>
+      </section>
     </main>
 
     <footer class="activity">
-      Last update: <strong id="last-updated">N/A</strong>
+      마지막 업데이트: <strong id="last-updated">N/A</strong>
     </footer>
   </div>
 

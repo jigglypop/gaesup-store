@@ -72,6 +72,7 @@ export interface PackageDependencyContract {
   name: string
   version: string
   optional?: boolean
+  source?: 'host' | 'bundled'
 }
 
 export interface StoreDependencyContract {

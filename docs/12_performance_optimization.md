@@ -1,48 +1,43 @@
-# Performance Optimization
+# 성능 최적화
 
-## Current Findings
+## 현재 병목
 
-The simplified demo shows that core dispatch is fast and framework rendering dominates visible latency.
+core dispatch는 빠릅니다. 체감 속도는 대부분 framework 렌더링과 DOM 반영에서 결정됩니다.
 
-Measured locally:
+## 권장 사항
 
-- Core dispatch p50: about 0.13ms.
-- Core dispatch p95: about 0.29ms.
-- Four framework counters visible after click p50: about 32ms.
-- Four framework counters visible after click p95: about 65ms.
+### 공유 상태를 작게 유지
 
-## Recommendations
+여러 프레임워크가 함께 봐야 하는 값만 Gaesup store에 둡니다.
 
-### Keep Shared State Small
+### path 구독 사용
 
-Store only the state needed by multiple consumers. Keep component-local UI state in the framework.
-
-### Subscribe at Useful Boundaries
-
-Subscribe to the store or path that the component needs:
+컴포넌트가 store 일부만 필요하면 path를 좁힙니다.
 
 ```typescript
-GaesupCore.subscribe('app', 'count', callbackId);
+GaesupCore.subscribe('orders', 'items', callbackId);
 ```
 
-### Batch Related Updates
+### batch 사용
+
+관련 업데이트를 묶습니다.
 
 ```typescript
-const batch = GaesupCore.createBatchUpdate('app');
-batch.addUpdate('MERGE', { a: 1 });
-batch.addUpdate('MERGE', { b: 2 });
+const batch = GaesupCore.createBatchUpdate('orders');
+batch.addUpdate('MERGE', { status: 'ready' });
+batch.addUpdate('MERGE', { count: 1 });
 await batch.execute();
 ```
 
-### Avoid Duplicate DOM in Demos
+### 데모 DOM 단순화
 
-Duplicate ids make browser measurements and event targeting unreliable. Mount framework components into empty host elements.
+중복 id와 숨은 placeholder를 만들지 않습니다. framework mount point는 비어 있어야 합니다.
 
-### Measure Separately
+### 따로 측정
 
-Measure these independently:
+다음 값을 분리해서 봅니다.
 
-- Core dispatch time.
-- Time until store value changes.
-- Time until all DOM subscribers are visible.
-- Browser memory use.
+- core dispatch 시간
+- store 값 변경 시간
+- DOM 전체 반영 시간
+- browser heap 사용량

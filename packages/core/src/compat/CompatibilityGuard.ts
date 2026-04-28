@@ -119,6 +119,15 @@ export class CompatibilityGuard {
     warnings: ValidationWarning[]
   ): void {
     for (const required of requiredDeps) {
+      if (required.source === 'bundled') {
+        warnings.push({
+          code: 'PACKAGE_DEPENDENCY_BUNDLED',
+          message: `Dependency ${required.name}@${required.version} is bundled with the container`,
+          location: `dependencies.${required.name}`
+        })
+        continue
+      }
+
       const provided = this.findDependency(required)
 
       if (!provided) {

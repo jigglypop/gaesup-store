@@ -1,51 +1,44 @@
-# Manifest Service
+# Manifest 서비스
 
-The manifest is the contract between a WASM package and the host.
+manifest는 컨테이너와 host 사이의 실행 계약입니다.
 
-## Manifest Shape
+## 주요 필드
+
+- `manifestVersion`
+- `name`
+- `version`
+- `gaesup.abiVersion`
+- `dependencies`
+- `stores`
+- `permissions`
+- `allowedImports`
+
+## 의존성 source
 
 ```typescript
-interface ContainerPackageManifest {
-  manifestVersion: '1.0';
-  name: string;
-  version: string;
-  runtime?: WASMRuntimeType;
-  wasm?: {
-    entrypoint?: string;
-    sha256?: string;
-    size?: number;
-  };
-  gaesup?: {
-    abiVersion: string;
-    minHostVersion?: string;
-  };
-  dependencies?: Array<{ name: string; version: string; optional?: boolean }>;
-  stores?: StoreDependencyContract[];
-  permissions?: ContainerPermissionContract;
-  allowedImports?: string[];
+{ name: 'date-fns', version: '^2.29.0', source: 'host' }
+{ name: 'chart.js', version: '^3.9.0', source: 'bundled' }
+```
+
+- `host`: host가 제공하는 dependency를 사용합니다. 버전이 맞아야 합니다.
+- `bundled`: 컨테이너 내부에 패키징된 dependency를 사용합니다. host 버전과 충돌하지 않습니다.
+
+## Store 정책
+
+```typescript
+{
+  storeId: 'orders',
+  schemaId: 'orders-state',
+  schemaVersion: '^1.2.0',
+  conflictPolicy: 'reject'
 }
 ```
 
-## Builder Directives
+정책:
 
-The container builder can emit these fields from Containerfile-style directives:
+- `reject`: 충돌 시 실행 차단
+- `isolate`: 공유 store 대신 격리 store 사용
+- `readonly`: 읽기 전용 접근
+- `migrate`: migration 흐름
 
-```dockerfile
-ABI 1.0
-DEPENDENCY lodash ^4.17.0
-STORE app counter-state ^1.0.0 reject
-IMPORT env.memory
-```
-
-## Validation
-
-`CompatibilityGuard` checks the manifest against host compatibility config.
-
-Important outcomes:
-
-- `reject`: stop the container when the store schema is incompatible.
-- `isolate`: reserved for a future runtime-enforced isolation mode.
-- `readonly`: reserved for a future runtime-enforced read-only store mode.
-- `migrate`: reserved for schema migration flows.
-
-At present, modes that require runtime enforcement are rejected unless the runtime implements them.
+현재 런타임 enforcement가 없는 정책은 실제 실행 단계에서 보수적으로 막아야 합니다.

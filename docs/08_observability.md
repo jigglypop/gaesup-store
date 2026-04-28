@@ -1,14 +1,13 @@
-# Observability
+# 관측성
 
-## Store Metrics
+## Store metrics
 
 ```typescript
-const metrics = await GaesupCore.getMetrics('app');
+const metrics = await GaesupCore.getMetrics('orders');
 ```
 
-Common fields:
+주요 값:
 
-- `store_id`
 - `subscriber_count`
 - `total_selects`
 - `total_updates`
@@ -16,21 +15,23 @@ Common fields:
 - `avg_dispatch_time`
 - `memory_usage`
 
-## Container Metrics
+## Container metrics
 
 ```typescript
 const metrics = manager.getMetrics();
 ```
 
-Container metrics are keyed by container id.
+container id별 metrics를 확인할 수 있습니다.
 
-## Demo Measurements
+## 데모 기준 측정
 
-The simplified multi-framework demo measured locally:
+최근 로컬 측정:
 
-- Initial ready time: about 827ms.
-- Four-counter DOM update after click, p50: about 32ms.
-- Four-counter DOM update after click, p95: about 65ms.
-- Direct core dispatch, p50: about 0.13ms.
+```text
+초기 ready: 약 827ms
+네 카운터 전체 반영 p50: 약 32ms
+네 카운터 전체 반영 p95: 약 65ms
+core dispatch p50: 약 0.13ms
+```
 
-The main cost is framework rendering and browser scheduling, not store dispatch.
+화면 반영 비용이 store dispatch 비용보다 큽니다.
