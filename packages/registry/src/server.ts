@@ -69,7 +69,7 @@ export class RegistryServer {
       host: this.config.host
     })
 
-    this.server.log.info(`🚀 Gaesup Container Registry listening at ${address}`)
+    this.server.log.info(`Gaesup Container Registry listening at ${address}`)
   }
 
   async stop(): Promise<void> {
@@ -141,7 +141,7 @@ export class RegistryServer {
     await this.setupGaesupAPI()
 
     // Web UI
-    this.server.get('/ui', async (request, reply) => {
+    this.server.get('/ui', async (_request, reply) => {
       return reply.sendFile('index.html')
     })
 
@@ -177,12 +177,12 @@ export class RegistryServer {
       },
 
       // 매니페스트 조회
-      'GET /v2/:name/manifests/:reference': async (request: any) => {
+      'GET /v2/:name/manifests/:reference': async (request: any, reply: any) => {
         const { name, reference } = request.params
         const manifest = await this.repository.getManifest(name, reference)
         
         if (!manifest) {
-          throw this.server.httpErrors.notFound('Manifest not found')
+          return reply.code(404).send({ error: 'Manifest not found' })
         }
 
         return manifest
@@ -210,13 +210,13 @@ export class RegistryServer {
       },
 
       // 블롭 업로드 완료
-      'PUT /v2/:name/blobs/uploads/:uuid': async (request: any) => {
+      'PUT /v2/:name/blobs/uploads/:uuid': async (request: any, reply: any) => {
         const { name, uuid } = request.params
         const { digest } = request.query
         const data = await request.file()
 
         if (!data) {
-          throw this.server.httpErrors.badRequest('No file provided')
+          return reply.code(400).send({ error: 'No file provided' })
         }
 
         await this.repository.completeBlobUpload(name, uuid, digest, data.file)
@@ -230,7 +230,7 @@ export class RegistryServer {
         const blob = await this.repository.getBlob(name, digest)
 
         if (!blob) {
-          throw this.server.httpErrors.notFound('Blob not found')
+          return reply.code(404).send({ error: 'Blob not found' })
         }
 
         return reply.type('application/octet-stream').send(blob)
@@ -258,12 +258,12 @@ export class RegistryServer {
     })
 
     // 컨테이너 상세 정보
-    this.server.get('/api/v1/containers/:name', async (request: any) => {
+    this.server.get('/api/v1/containers/:name', async (request: any, reply: any) => {
       const { name } = request.params
       const container = await this.repository.getContainerInfo(name)
       
       if (!container) {
-        throw this.server.httpErrors.notFound('Container not found')
+        return reply.code(404).send({ error: 'Container not found' })
       }
 
       return container
@@ -330,14 +330,16 @@ export class RegistryServer {
 // 서버 시작 (직접 실행 시)
 if (import.meta.url === `file://${process.argv[1]}`) {
   const config: Partial<RegistryConfig> = {
-    port: parseInt(process.env.PORT || '5000'),
+    port: parseInt(process.env.PORT || '5000', 10),
     storage: {
       type: process.env.STORAGE_TYPE as any || 'filesystem',
       path: process.env.STORAGE_PATH || './data/registry'
     },
     auth: {
       enabled: process.env.AUTH_ENABLED === 'true',
-      type: process.env.AUTH_TYPE as any || 'basic'
+      type: process.env.AUTH_TYPE as any || 'basic',
+      username: process.env.AUTH_USERNAME,
+      password: process.env.AUTH_PASSWORD
     }
   }
 

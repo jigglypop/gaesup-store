@@ -4,12 +4,10 @@
   "description": "WASM 컨테이너 이미지 빌더 도구",
   "type": "module",
   "bin": {
-    "gaesup-build": "./bin/gaesup-build.js",
-    "gaesup-push": "./bin/gaesup-push.js",
-    "gaesup-pull": "./bin/gaesup-pull.js"
+    "gaesup-build": "./bin/gaesup-build.js"
   },
   "main": "./dist/index.js",
-  "module": "./dist/index.esm.js",
+  "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [
     "dist",

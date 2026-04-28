@@ -31,6 +31,20 @@ pub(crate) fn compose_matrix(
     ]
 }
 
+pub(crate) fn multiply_matrix(left: [f32; 16], right: [f32; 16]) -> [f32; 16] {
+    let mut result = [0.0; 16];
+    for row in 0..4 {
+        for column in 0..4 {
+            result[row * 4 + column] =
+                left[row * 4] * right[column] +
+                left[row * 4 + 1] * right[4 + column] +
+                left[row * 4 + 2] * right[8 + column] +
+                left[row * 4 + 3] * right[12 + column];
+        }
+    }
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -43,6 +57,17 @@ mod tests {
         assert_eq!(matrix[13], 2.0);
         assert_eq!(matrix[14], 3.0);
         assert_eq!(matrix[15], 1.0);
+    }
+
+    #[test]
+    fn matrix_multiply_combines_parent_and_child_translation() {
+        let parent = compose_matrix([10.0, 0.0, 0.0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+        let child = compose_matrix([3.0, 0.0, 0.0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+        let world = multiply_matrix(parent, child);
+
+        assert_eq!(world[12], 13.0);
+        assert_eq!(world[13], 0.0);
+        assert_eq!(world[14], 0.0);
     }
 
     #[test]

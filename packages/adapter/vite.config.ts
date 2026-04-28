@@ -4,9 +4,15 @@ import { resolve } from 'path'
 export default defineConfig({
   build: {
     lib: {
-      entry: resolve(__dirname, 'src/index.ts'),
+      entry: {
+        index: resolve(__dirname, 'src/index.ts'),
+        reactive: resolve(__dirname, 'src/reactive.ts'),
+        signals: resolve(__dirname, 'src/signals.ts'),
+        sync: resolve(__dirname, 'src/sync.ts'),
+        container: resolve(__dirname, 'src/container.ts')
+      },
       name: 'GaesupStateAdapter',
-      fileName: (format) => `index.${format}.js`,
+      fileName: (format, entryName) => `${entryName}.${format === 'es' ? 'js' : 'cjs'}`,
       formats: ['es', 'cjs']
     },
     rollupOptions: {

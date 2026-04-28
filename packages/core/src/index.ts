@@ -84,9 +84,17 @@ export interface ValidationResult {
 
 export interface ContainerConfig {
   id?: string;
-  name: string;
+  name?: string;
   runtime?: string;
   initialState?: any;
+  maxMemory?: number;
+  maxCpuTime?: number;
+  networkAccess?: boolean;
+  isolation?: {
+    fileSystemAccess?: boolean;
+    memoryIsolation?: boolean;
+    crossContainerComm?: boolean;
+  };
 }
 
 export interface DispatchPipelineOptions {
@@ -110,9 +118,17 @@ export type ContainerEvent = Record<string, any> & { type: ContainerEventType };
 export type ContainerManagerConfig = Record<string, any>;
 export type ContainerMetrics = Record<string, any>;
 export type ContainerMetadata = Record<string, any>;
+export class ContainerError extends Error {
+  constructor(message: string, readonly containerId?: string, readonly cause?: unknown) {
+    super(message);
+    this.name = 'ContainerError';
+  }
+}
 
 let ready: Promise<void> | null = null;
 const dispatchListeners = new Map<string, Set<(action: Action, state: any) => void>>();
+const reducers = new Map<string, Set<(state: any, action: Action) => any>>();
+const persistedStores = new Map<string, any>();
 let autoStoreSeq = 0;
 let activeAutoWatcher: AutoStoreWatcher<any, any> | null = null;
 
@@ -155,7 +171,10 @@ export const GaesupCore = {
     const storeId = legacy ? 'main' : storeIdOrActionType;
     const actionType = legacy ? storeIdOrActionType : actionTypeOrPayload;
     const actionPayload = legacy ? actionTypeOrPayload : payload;
-    const state = await wasm.dispatch(storeId, actionType, actionPayload);
+    const action = { type: actionType, payload: actionPayload };
+    const state = reducers.has(storeId) && !isNativeAction(actionType)
+      ? await dispatchThroughReducers(storeId, action)
+      : await wasm.dispatch(storeId, actionType, actionPayload);
     dispatchListeners.get(storeId)?.forEach((listener) => listener({ type: actionType, payload: actionPayload }, state));
     return state;
   },
@@ -266,8 +285,31 @@ export const GaesupCore = {
     dispatchListeners.set(storeId, listeners);
     return () => listeners.delete(listener);
   },
-  registerReducer() {
-    throw new Error('Reducers must be compiled into the Rust WASM core path');
+  registerReducer(storeId: string, reducer: (state: any, action: Action) => any) {
+    const storeReducers = reducers.get(storeId) || new Set();
+    storeReducers.add(reducer);
+    reducers.set(storeId, storeReducers);
+    return () => {
+      storeReducers.delete(reducer);
+      if (storeReducers.size === 0) reducers.delete(storeId);
+    };
+  },
+  async persistStore(storeId: string, storageKey = storeId) {
+    await ensureReady();
+    const state = wasm.select(storeId, '');
+    writePersistedState(storageKey, state);
+  },
+  async hydrateStore(storeId: string, storageKey = storeId) {
+    await ensureReady();
+    const state = readPersistedState(storageKey);
+    if (state === undefined) return undefined;
+    return wasm.dispatch(storeId, 'SET', state);
+  },
+  async persist_store(storeId: string, storageKey = storeId) {
+    return this.persistStore(storeId, storageKey);
+  },
+  async hydrate_store(storeId: string, storageKey = storeId) {
+    return this.hydrateStore(storeId, storageKey);
   }
 };
 
@@ -286,17 +328,34 @@ export class CompatibilityGuard {
 }
 
 export class ContainerInstance {
+  private listeners = new Set<(state: any) => void>();
   constructor(private readonly id: string) {}
   getId() { return this.id; }
+  get metrics() { return this.getMetrics(); }
   getStatus() { return this.getMetrics().status; }
-  async call(functionName: string, args?: any) { await ensureReady(); return wasm.call_container(this.id, functionName, args); }
+  async call<T = any>(functionName: string, args?: any) { await ensureReady(); return wasm.call_container(this.id, functionName, args) as T; }
+  get state() { return this.getState(); }
   getState() { requireReady(); return wasm.get_container_state(this.id); }
   getMetrics() { requireReady(); return wasm.get_container_metrics(this.id); }
+  async updateState(state: any) {
+    await ensureReady();
+    const next = await wasm.call_container(this.id, 'setState', state);
+    this.listeners.forEach((listener) => listener(state));
+    return next;
+  }
+  subscribe(listener: (state: any) => void) {
+    this.listeners.add(listener);
+    listener(this.getState());
+    return () => this.listeners.delete(listener);
+  }
   async stop() { await ensureReady(); return wasm.stop_container(this.id); }
 }
 
 export class ContainerManager {
   private listeners = new Map<ContainerEventType, Set<(event: ContainerEvent) => void>>();
+  readonly events = {
+    on: (type: string, listener: (event: ContainerEvent) => void) => this.on(type as ContainerEventType, listener)
+  };
   constructor(readonly config: ContainerManagerConfig = {}) {}
   async createContainer(config: ContainerConfig) {
     await ensureReady();
@@ -305,12 +364,18 @@ export class ContainerManager {
     this.emit('container:created', { type: 'container:created', id: created.id, containerId: created.id });
     return instance;
   }
-  async run(name: string) {
-    const container = await this.createContainer({ name });
-    return container.getId();
+  async run(name: string, config: Partial<ContainerConfig> = {}) {
+    return this.createContainer({ ...config, name });
   }
   getContainer(id: string) { return new ContainerInstance(id); }
   listContainers() { requireReady(); return wasm.list_containers() as ContainerMetadata[]; }
+  getMetrics() {
+    requireReady();
+    return Object.fromEntries(this.listContainers().map((container) => {
+      const id = container.id || container.containerId || container.name;
+      return [id, wasm.get_container_metrics(id)];
+    }));
+  }
   async cleanup() { await ensureReady(); wasm.cleanup_containers(); }
   on(type: ContainerEventType, listener: (event: ContainerEvent) => void) {
     const listeners = this.listeners.get(type) || new Set();
@@ -320,6 +385,7 @@ export class ContainerManager {
   }
   private emit(type: ContainerEventType, event: ContainerEvent) {
     this.listeners.get(type)?.forEach((listener) => listener(event));
+    this.listeners.get('*' as ContainerEventType)?.forEach((listener) => listener(event));
   }
 }
 
@@ -347,15 +413,18 @@ export const GaesupRender = {
   },
   async createEntity(storeId: string, entity: {
     id?: string;
+    parentId?: string;
     instanceIndex?: number;
     transform?: {
       position?: [number, number, number];
       rotation?: [number, number, number];
       scale?: [number, number, number];
     };
+    size?: [number, number];
     materialId?: string;
     meshId?: string;
     visible?: boolean;
+    locked?: boolean;
   }) {
     await ensureReady();
     return (wasm as any).create_render_entity(storeId, entity) as string;
@@ -367,6 +436,10 @@ export const GaesupRender = {
   }) {
     await ensureReady();
     return (wasm as any).set_render_transform(storeId, entityId, transform);
+  },
+  async setParent(storeId: string, entityId: string, parentId: string | null) {
+    await ensureReady();
+    return (wasm as any).set_render_parent(storeId, entityId, parentId);
   },
   async rotateY(storeId: string, entityId: string, radians: number) {
     await ensureReady();
@@ -396,6 +469,45 @@ export const GaesupRender = {
     requireReady();
     return (wasm as any).get_render_dirty_matrix_buffer(storeId);
   },
+  getDirtyMatrixRanges(storeId: string): GaesupMatrixRange[] {
+    requireReady();
+    return (wasm as any).get_render_dirty_matrix_ranges(storeId);
+  },
+  hitTest(storeId: string, x: number, y: number): GaesupEntityHit | null {
+    requireReady();
+    return (wasm as any).hit_test_render_entity(storeId, x, y);
+  },
+  selectAt(storeId: string, x: number, y: number, append = false): string[] {
+    requireReady();
+    return (wasm as any).select_render_entity_at(storeId, x, y, append);
+  },
+  selectRect(
+    storeId: string,
+    minX: number,
+    minY: number,
+    maxX: number,
+    maxY: number,
+    append = false
+  ): string[] {
+    requireReady();
+    return (wasm as any).select_render_entities_in_rect(storeId, minX, minY, maxX, maxY, append);
+  },
+  getSelection(storeId: string): string[] {
+    requireReady();
+    return (wasm as any).get_render_selection(storeId);
+  },
+  applyCommand(storeId: string, command: GaesupRenderCommand): GaesupTimelineCommand {
+    requireReady();
+    return (wasm as any).apply_render_command(storeId, command);
+  },
+  undoCommand(storeId: string): GaesupTimelineCommand | null {
+    requireReady();
+    return (wasm as any).undo_render_command(storeId);
+  },
+  redoCommand(storeId: string): GaesupTimelineCommand | null {
+    requireReady();
+    return (wasm as any).redo_render_command(storeId);
+  },
   async benchmarkMatrixBuffer(entityCount: number) {
     await ensureReady();
     return (wasm as any).benchmark_render_matrix_buffer(entityCount);
@@ -404,10 +516,74 @@ export const GaesupRender = {
     await ensureReady();
     return (wasm as any).benchmark_render_dirty_matrix_buffer(entityCount, dirtyCount);
   },
+  async benchmarkDirtyMatrixRanges(entityCount: number, dirtyCount: number, stride = 1) {
+    await ensureReady();
+    return (wasm as any).benchmark_render_dirty_matrix_ranges(entityCount, dirtyCount, stride);
+  },
   cleanup(storeId: string) {
     return (wasm as any).cleanup_render_store(storeId);
   }
 };
+
+export interface GaesupMatrixRange {
+  startInstanceIndex: number;
+  count: number;
+  matrices: Float32Array;
+}
+
+export interface GaesupEntityHit {
+  entityId: string;
+  instanceIndex: number;
+  x: number;
+  y: number;
+}
+
+export type GaesupRenderCommand =
+  | {
+      type: 'updateTransform';
+      entityId: string;
+      transform: {
+        position?: [number, number, number];
+        rotation?: [number, number, number];
+        scale?: [number, number, number];
+      };
+    }
+  | {
+      type: 'select';
+      entityIds: string[];
+      append?: boolean;
+    }
+  | {
+      type: 'setParent';
+      entityId: string;
+      parentId?: string | null;
+    }
+  | {
+      type: 'delete';
+      entityId: string;
+    };
+
+export interface GaesupTimelineCommand {
+  id: string;
+  timeMs: number;
+  commandType: string;
+  entityId?: string;
+  before: unknown;
+  after: unknown;
+}
+
+export interface GaesupGpuQueue {
+  writeBuffer(buffer: any, bufferOffset: number, data: ArrayBufferView | ArrayBuffer): void;
+}
+
+export interface GaesupGpuDevice {
+  queue: GaesupGpuQueue;
+}
+
+export interface GaesupWgpuBufferBinding {
+  buffer: any;
+  strideBytes?: number;
+}
 
 export interface GaesupRenderObject {
   matrix?: {
@@ -422,10 +598,11 @@ export interface GaesupRenderObject {
 
 export interface GaesupRenderBridgeOptions {
   storeId: string;
-  gpuDevice?: any;
+  gpuDevice?: GaesupGpuDevice;
   matrixBuffer?: any;
   matrixStrideBytes?: number;
   patchMode?: 'typed' | 'json';
+  gpuWriteMode?: 'per-instance' | 'range';
 }
 
 export interface GaesupInstancedWriter {
@@ -495,6 +672,19 @@ export class GaesupRenderBridge {
     return buffer;
   }
 
+  syncDirtyMatrixRanges() {
+    const ranges = GaesupRender.getDirtyMatrixRanges(this.options.storeId);
+    if (this.options.gpuDevice && this.options.matrixBuffer) {
+      writeMatrixRangesToGpu(
+        this.options.gpuDevice,
+        this.options.matrixBuffer,
+        ranges,
+        this.options.matrixStrideBytes || 64
+      );
+    }
+    return ranges;
+  }
+
   async tick(deltaMs: number) {
     const frame = this.options.patchMode === 'json'
       ? await GaesupRender.tickFrame(this.options.storeId, deltaMs)
@@ -502,6 +692,10 @@ export class GaesupRenderBridge {
     if (this.options.patchMode === 'json') {
       this.applyPatches(frame);
       return frame;
+    }
+    if (this.options.gpuWriteMode === 'range') {
+      const ranges = this.syncDirtyMatrixRanges();
+      return { frame, ranges };
     }
     const dirty = this.syncDirtyMatrixBuffer();
     return { frame, dirty };
@@ -549,6 +743,61 @@ export class GaesupRenderBridge {
           new Float32Array(matrix)
         );
       }
+    }
+  }
+}
+
+export interface GaesupWgpuStateOptions {
+  storeId: string;
+  device: GaesupGpuDevice;
+  matrix: GaesupWgpuBufferBinding;
+}
+
+export class GaesupWgpuState {
+  constructor(private readonly options: GaesupWgpuStateOptions) {}
+
+  writeFullMatrixBuffer() {
+    const payload = GaesupRender.getMatrixBuffer(this.options.storeId);
+    const matrices = new Float32Array(payload.matrices);
+    this.options.device.queue.writeBuffer(this.options.matrix.buffer, 0, matrices);
+    return payload;
+  }
+
+  writeDirtyMatrixRanges() {
+    const ranges = GaesupRender.getDirtyMatrixRanges(this.options.storeId);
+    writeMatrixRangesToGpu(
+      this.options.device,
+      this.options.matrix.buffer,
+      ranges,
+      this.options.matrix.strideBytes || 64
+    );
+    return ranges;
+  }
+
+  async tick(deltaMs: number) {
+    const frame = await GaesupRender.tickFrameState(this.options.storeId, deltaMs);
+    const ranges = this.writeDirtyMatrixRanges();
+    return { frame, ranges };
+  }
+}
+
+function writeMatrixRangesToGpu(
+  device: GaesupGpuDevice,
+  matrixBuffer: any,
+  ranges: GaesupMatrixRange[],
+  strideBytes: number
+) {
+  if (strideBytes === 64) {
+    for (const range of ranges) {
+      device.queue.writeBuffer(matrixBuffer, range.startInstanceIndex * strideBytes, range.matrices);
+    }
+    return;
+  }
+
+  for (const range of ranges) {
+    for (let index = 0; index < range.count; index++) {
+      const matrix = range.matrices.subarray(index * 16, index * 16 + 16);
+      device.queue.writeBuffer(matrixBuffer, (range.startInstanceIndex + index) * strideBytes, matrix);
     }
   }
 }
@@ -1229,6 +1478,42 @@ function clonePlain<T>(value: T): T {
     return structuredClone(value);
   }
   return JSON.parse(JSON.stringify(value));
+}
+
+function isNativeAction(actionType: string) {
+  return actionType === 'SET' || actionType === 'MERGE' || actionType === 'UPDATE' || actionType === 'DELETE' || actionType === 'BATCH';
+}
+
+async function dispatchThroughReducers(storeId: string, action: Action) {
+  const storeReducers = reducers.get(storeId);
+  if (!storeReducers || storeReducers.size === 0) {
+    return wasm.dispatch(storeId, action.type, action.payload);
+  }
+
+  let nextState = clonePlain(wasm.select(storeId, ''));
+  for (const reducer of storeReducers) {
+    const draft = clonePlain(nextState);
+    const result = reducer(draft, action);
+    nextState = result === undefined ? draft : result;
+  }
+
+  return wasm.dispatch(storeId, 'SET', nextState);
+}
+
+function writePersistedState(storageKey: string, state: any) {
+  const cloned = clonePlain(state);
+  persistedStores.set(storageKey, cloned);
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(storageKey, JSON.stringify(cloned));
+  }
+}
+
+function readPersistedState(storageKey: string) {
+  if (typeof localStorage !== 'undefined') {
+    const stored = localStorage.getItem(storageKey);
+    if (stored !== null) return JSON.parse(stored);
+  }
+  return persistedStores.get(storageKey);
 }
 
 function extractPublicState(value: Record<string, any>) {

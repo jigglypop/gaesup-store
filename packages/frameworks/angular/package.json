@@ -29,15 +29,15 @@
   "scripts": {
     "build": "vite build && tsc --emitDeclarationOnly",
     "dev": "vite build --watch",
-    "test": "vitest",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "type-check": "tsc --noEmit",
     "clean": "rm -rf dist",
     "pack:dry": "pnpm run build && npm pack --dry-run"
   },
   "dependencies": {
-    "gaesup-state": "0.0.1",
-    "@gaesup-state/adapter": "0.0.1",
+    "gaesup-state": "workspace:^",
+    "@gaesup-state/adapter": "workspace:^",
     "tslib": "^2.6.0"
   },
   "peerDependencies": {

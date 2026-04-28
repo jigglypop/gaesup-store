@@ -107,13 +107,33 @@ const bridge = new GaesupRenderBridge({
   storeId: 'scene',
   gpuDevice: device,
   matrixBuffer,
-  matrixStrideBytes: 64
+  matrixStrideBytes: 64,
+  gpuWriteMode: 'range'
 });
 
 await bridge.tick(16.6);
 ```
 
-이 경우 dirty matrix마다 `device.queue.writeBuffer`를 호출합니다. entity가 아주 많아지면 이후 단계에서 연속된 index를 묶어 write range batching을 적용하는 것이 좋습니다.
+`gpuWriteMode: 'range'`를 쓰면 Rust/WASM render store가 dirty instance를 정렬한 뒤 연속된 index를 하나의 range로 묶습니다. matrix stride가 64 bytes이면 range 하나당 `device.queue.writeBuffer`를 한 번만 호출합니다.
+
+직접 WebGPU 상태 브릿지를 쓰는 경우에는 `GaesupWgpuState`를 사용할 수 있습니다.
+
+```typescript
+import { GaesupWgpuState } from 'gaesup-state';
+
+const wgpu = new GaesupWgpuState({
+  storeId: 'scene',
+  device,
+  matrix: {
+    buffer: matrixBuffer,
+    strideBytes: 64
+  }
+});
+
+await wgpu.tick(16.6);
+```
+
+이 구조에서 상태의 소유자는 Rust/WASM render store이고, WebGPU buffer는 상태를 반영하는 출력 대상입니다. 브라우저 WebGPU 객체 자체는 JS API가 소유하므로 Rust가 `GPUBuffer`를 직접 들고 있지는 않습니다.
 
 ## 화면 전환
 
@@ -143,7 +163,7 @@ await GaesupRender.tickFrameState('scene', 16.6);
 
 - 실제 wgpu native renderer는 아직 포함되어 있지 않습니다.
 - 브라우저 WebGPU 호출은 JS API를 거칩니다.
-- `writeBuffer` 호출을 자동으로 range batching하지 않습니다.
+- matrix stride가 64 bytes가 아닌 경우 range batching 대신 matrix별 write fallback을 사용합니다.
 - dirty tracking은 더 numeric-friendly한 구조로 개선할 여지가 있습니다.
 - async tick을 R3F `useFrame`에서 직접 기다리는 방식은 큰 앱에서 조정이 필요합니다.
 
@@ -151,7 +171,7 @@ await GaesupRender.tickFrameState('scene', 16.6);
 
 - numeric entity id와 packed dirty list
 - WASM memory view 재사용
-- GPU write range batching
+- material/uniform buffer dirty range
 - worker 기반 render state tick
 - R3F hook wrapper
 - WebGPU 전용 command buffer

@@ -1,28 +1,34 @@
-import type { AdapterContainerInstance, FrameworkAdapter, ReactivitySystem, StateSubscription } from './types'
+import { createReactiveValue } from './reactive'
+import type {
+  AdapterContainerInstance,
+  FrameworkAdapter,
+  ReactiveValue,
+  ReactivitySystem,
+  StateSubscription,
+  SubscribeOptions
+} from './types'
 
 export function createFrameworkAdapter(
   reactivitySystem: ReactivitySystem
 ): FrameworkAdapter {
-  const subscriptions = new Map<string, Set<StateSubscription>>()
-  const stateCache = new Map<string, any>()
+  const subscriptions = new Map<string, Set<{ unsubscribe: () => void }>>()
+  const stateCache = new Map<string, unknown>()
 
   return {
-    // 상태 구독
-    subscribe<T>(
-      container: AdapterContainerInstance,
-      selector?: (state: any) => T,
-      options?: { equalityFn?: (a: T, b: T) => boolean }
+    subscribe<TState, TValue = TState>(
+      container: AdapterContainerInstance<TState>,
+      selector?: (state: TState) => TValue,
+      options?: SubscribeOptions<TValue>
     ) {
       const containerId = container.id
-      const { equalityFn = Object.is } = options || {}
+      const { equalityFn = Object.is, emitInitial = true } = options || {}
+      const selectValue = (state: TState) => selector ? selector(state) : state as unknown as TValue
 
-      // 리액티브 값 생성
-      const reactiveValue = reactivitySystem.createReactive<T>(
-        selector ? selector(container.state) : container.state
+      const reactiveValue = reactivitySystem.createReactive<TValue>(
+        selectValue(container.state)
       )
 
-      // 구독 정보 저장
-      const subscription: StateSubscription = {
+      const subscription: StateSubscription<TState, TValue> = {
         id: generateSubscriptionId(),
         container,
         reactiveValue,
@@ -33,9 +39,8 @@ export function createFrameworkAdapter(
         subscription.selector = selector
       }
 
-      // 컨테이너 상태 변경 구독
       const unsubscribe = container.subscribe((newState) => {
-        const newValue = selector ? selector(newState) : newState
+        const newValue = selectValue(newState)
         const oldValue = reactiveValue.value
 
         if (!equalityFn(oldValue, newValue)) {
@@ -46,11 +51,14 @@ export function createFrameworkAdapter(
 
       subscription.unsubscribe = unsubscribe
 
-      // 구독 목록에 추가
       if (!subscriptions.has(containerId)) {
         subscriptions.set(containerId, new Set())
       }
       subscriptions.get(containerId)!.add(subscription)
+
+      if (!emitInitial) {
+        stateCache.set(containerId, container.state)
+      }
 
       return {
         value: reactiveValue,
@@ -61,35 +69,42 @@ export function createFrameworkAdapter(
       }
     },
 
-    // 상태 업데이트
-    async setState<T>(
-      container: AdapterContainerInstance,
-      updater: T | ((prev: T) => T)
+    async setState<TState>(
+      container: AdapterContainerInstance<TState>,
+      updater: TState | ((previous: TState) => TState)
     ) {
       const currentState = container.state
-      const newState = typeof updater === 'function' 
-        ? (updater as (prev: T) => T)(currentState)
+      const newState = typeof updater === 'function'
+        ? (updater as (previous: TState) => TState)(currentState)
         : updater
 
       await container.updateState(newState)
       stateCache.set(container.id, newState)
+      return newState
     },
 
-    // 함수 호출
-    async callFunction<R>(
+    async patchState<TState extends Record<string, unknown>>(
+      container: AdapterContainerInstance<TState>,
+      patch: Partial<TState>
+    ) {
+      const next = { ...container.state, ...patch } as TState
+      await container.updateState(next)
+      stateCache.set(container.id, next)
+      return next
+    },
+
+    async callFunction<TResult>(
       container: AdapterContainerInstance,
       functionName: string,
-      args?: any
-    ): Promise<R> {
-      return await container.call<R>(functionName, args)
+      args?: unknown
+    ): Promise<TResult> {
+      return container.call<TResult>(functionName, args)
     },
 
-    // 메트릭 조회
-    getMetrics(container: AdapterContainerInstance) {
+    getMetrics<TMetrics>(container: AdapterContainerInstance<unknown, TMetrics>) {
       return container.metrics
     },
 
-    // 정리
     cleanup() {
       subscriptions.forEach((subs) => {
         subs.forEach(sub => sub.unsubscribe())
@@ -98,127 +113,52 @@ export function createFrameworkAdapter(
       stateCache.clear()
     },
 
-    // 캐시된 상태 조회
-    getCachedState(containerId: string) {
-      return stateCache.get(containerId)
+    getCachedState<TState = unknown>(containerId: string) {
+      return stateCache.get(containerId) as TState | undefined
     },
 
-    // 활성 구독 수
     getSubscriptionCount(containerId: string) {
       return subscriptions.get(containerId)?.size || 0
     }
   }
 }
 
-// 고유 구독 ID 생성
 function generateSubscriptionId(): string {
   return `sub_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
 }
 
-// React 어댑터
 export function createReactAdapter(): FrameworkAdapter {
   return createFrameworkAdapter({
-    createReactive<T>(initialValue: T) {
-      // React의 useState와 유사한 구조
-      let value = initialValue
-      const listeners = new Set<() => void>()
-      
-      return {
-        get value() { return value },
-        set value(newValue: T) {
-          value = newValue
-          listeners.forEach(listener => listener())
-        },
-        subscribe(listener: () => void) {
-          listeners.add(listener)
-          return () => listeners.delete(listener)
-        }
-      }
-    },
-    
-    updateReactive<T>(reactive: { value: T }, newValue: T) {
-      reactive.value = newValue
+    createReactive: createReactiveValue,
+    updateReactive<T>(reactive: ReactiveValue<T>, newValue: T) {
+      reactive.set(newValue)
     }
   })
 }
 
-// Vue 어댑터
 export function createVueAdapter(): FrameworkAdapter {
   return createFrameworkAdapter({
-    createReactive<T>(initialValue: T) {
-      // Vue의 ref와 유사한 구조
-      let value = initialValue
-      const listeners = new Set<() => void>()
-      
-      return {
-        get value() { return value },
-        set value(newValue: T) {
-          value = newValue
-          listeners.forEach(listener => listener())
-        },
-        subscribe(listener: () => void) {
-          listeners.add(listener)
-          return () => listeners.delete(listener)
-        }
-      }
-    },
-    
-    updateReactive<T>(reactive: { value: T }, newValue: T) {
-      reactive.value = newValue
+    createReactive: createReactiveValue,
+    updateReactive<T>(reactive: ReactiveValue<T>, newValue: T) {
+      reactive.set(newValue)
     }
   })
 }
 
-// Svelte 어댑터  
 export function createSvelteAdapter(): FrameworkAdapter {
   return createFrameworkAdapter({
-    createReactive<T>(initialValue: T) {
-      // Svelte의 writable store와 유사한 구조
-      let value = initialValue
-      const listeners = new Set<(value: T) => void>()
-      
-      return {
-        get value() { return value },
-        set value(newValue: T) {
-          value = newValue
-          listeners.forEach(listener => listener(newValue))
-        },
-        subscribe(listener: () => void) {
-          listeners.add(listener as any)
-          return () => listeners.delete(listener as any)
-        }
-      }
-    },
-    
-    updateReactive<T>(reactive: { value: T }, newValue: T) {
-      reactive.value = newValue
+    createReactive: createReactiveValue,
+    updateReactive<T>(reactive: ReactiveValue<T>, newValue: T) {
+      reactive.set(newValue)
     }
   })
 }
 
-// Angular 어댑터
 export function createAngularAdapter(): FrameworkAdapter {
   return createFrameworkAdapter({
-    createReactive<T>(initialValue: T) {
-      // Angular의 signal과 유사한 구조
-      let value = initialValue
-      const listeners = new Set<() => void>()
-      
-      return {
-        get value() { return value },
-        set value(newValue: T) {
-          value = newValue
-          listeners.forEach(listener => listener())
-        },
-        subscribe(listener: () => void) {
-          listeners.add(listener)
-          return () => listeners.delete(listener)
-        }
-      }
-    },
-    
-    updateReactive<T>(reactive: { value: T }, newValue: T) {
-      reactive.value = newValue
+    createReactive: createReactiveValue,
+    updateReactive<T>(reactive: ReactiveValue<T>, newValue: T) {
+      reactive.set(newValue)
     }
   })
 } 

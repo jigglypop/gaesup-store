@@ -321,12 +321,19 @@ bridge.flush();
 
 ## 성능 확인
 
-상태관리 비교와 병목 탐색 스크립트가 있습니다.
+상태관리 비교와 병목 탐색 스크립트가 있습니다. `pnpm bench`는 WASM 빌드 후 전체 벤치마크를 실행하고, 개별 스크립트는 비교 대상이나 병목만 따로 볼 때 씁니다.
 
 ```bash
+pnpm bench
 pnpm bench:compare
 pnpm bench:bottleneck
 ```
+
+비교 기준은 세 가지입니다.
+
+1. 일반 UI 상태는 Zustand, Jotai, Redux와 같은 JS 상태관리 라이브러리와 비교합니다.
+2. 초고빈도 카운터 업데이트는 JS/WASM 경계 비용을 줄인 fast path와 handle path를 따로 측정합니다.
+3. 렌더링 상태는 JSON patch보다 typed buffer와 dirty matrix buffer가 유리한 경우를 확인합니다.
 
 핵심 결과는 `docs/performance.md`에 정리되어 있습니다. 일반 auto store는 편의성을 위한 경로이고, 초고빈도 업데이트는 counter handle fast path 또는 render runtime을 쓰는 구성이 좋습니다.
 
@@ -338,9 +345,11 @@ gaesup-store/
 │  ├─ core/              # TypeScript API wrapper
 │  ├─ core-rust/         # Rust/WASM core
 │  ├─ frameworks/        # React, Vue, Svelte, Angular adapters
-│  └─ shared/            # Shared TypeScript types
+│  └─ registry/          # Filesystem-backed WASM container registry
 ├─ examples/
 │  └─ multi-framework-demo/
+├─ tools/
+│  └─ container-builder/
 ├─ docs/
 ├─ docker/
 └─ benchmarks/

@@ -4,9 +4,9 @@ import { resolve } from 'path'
 export default defineConfig({
   build: {
     lib: {
-      entry: resolve(__dirname, 'src/builder/ContainerBuilder.ts'),
+      entry: resolve(__dirname, 'src/index.ts'),
       name: 'GaesupContainerBuilder',
-      fileName: (format) => `index.${format}.js`,
+      fileName: (format) => format === 'es' ? 'index.js' : 'index.cjs',
       formats: ['es', 'cjs']
     },
     rollupOptions: {

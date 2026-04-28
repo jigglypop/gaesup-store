@@ -11,24 +11,34 @@
     "directory": "packages/adapter"
   },
   "main": "./dist/index.js",
-  "module": "./dist/index.esm.js",
+  "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.esm.js",
-      "require": "./dist/index.js",
-      "default": "./dist/index.esm.js"
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.js"
     },
     "./reactive": {
       "types": "./dist/reactive.d.ts",
-      "import": "./dist/reactive.esm.js",
-      "require": "./dist/reactive.js"
+      "import": "./dist/reactive.js",
+      "require": "./dist/reactive.cjs"
     },
     "./signals": {
       "types": "./dist/signals.d.ts",
-      "import": "./dist/signals.esm.js",
-      "require": "./dist/signals.js"
+      "import": "./dist/signals.js",
+      "require": "./dist/signals.cjs"
+    },
+    "./sync": {
+      "types": "./dist/sync.d.ts",
+      "import": "./dist/sync.js",
+      "require": "./dist/sync.cjs"
+    },
+    "./container": {
+      "types": "./dist/container.d.ts",
+      "import": "./dist/container.js",
+      "require": "./dist/container.cjs"
     },
     "./package.json": "./package.json"
   },
@@ -39,14 +49,14 @@
   "scripts": {
     "build": "vite build && tsc --emitDeclarationOnly",
     "dev": "vite build --watch",
-    "test": "vitest",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "type-check": "tsc --noEmit",
     "clean": "rm -rf dist",
     "pack:dry": "pnpm run build && npm pack --dry-run"
   },
   "dependencies": {
-    "gaesup-state": "0.0.1"
+    "gaesup-state": "workspace:^"
   },
   "devDependencies": {
     "typescript": "^5.3.0",

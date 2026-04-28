@@ -13,6 +13,7 @@ export {
 } from './hooks/useGaesupState'
 export { useContainerState } from './hooks/useContainerState'
 export { useContainerRegistry } from './hooks/useContainerRegistry'
+export type { UseContainerRegistryOptions } from './hooks/useContainerRegistry'
 export { useContainerMetrics } from './hooks/useContainerMetrics'
 export { useContainerEvents } from './hooks/useContainerEvents'
 export { useContainerManager } from './hooks/useContainerManager'

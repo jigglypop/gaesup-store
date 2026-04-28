@@ -1,15 +1,23 @@
+import { ContainerManager } from 'gaesup-state'
 import type { ContainerConfig, ValidationResult } from 'gaesup-state'
 
-export function createContainer(
+export async function createContainer(
   name: string, 
   wasmModule: WebAssembly.Module, 
   config?: ContainerConfig
 ) {
-  // 실제 구현에서는 ContainerManager를 사용
+  const manager = new ContainerManager()
+  const instance = await manager.createContainer({
+    ...config,
+    name
+  })
+
   return {
     name,
     module: wasmModule,
-    config: config || {}
+    config: config || {},
+    instance,
+    manager
   }
 }
 
@@ -55,6 +63,7 @@ export function validateContainer(config: ContainerConfig): ValidationResult {
   return {
     valid: errors.length === 0,
     errors,
-    warnings
+    warnings,
+    isolatedStores: []
   }
 } 

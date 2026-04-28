@@ -26,15 +26,13 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@fastify/cors": "^8.5.0",
     "@fastify/helmet": "^11.1.0",
+    "@fastify/multipart": "^7.7.3",
     "@fastify/rate-limit": "^8.0.0",
-    "gaesup-state": "0.0.1",
-    "better-sqlite3": "^9.1.0",
+    "@fastify/static": "^6.12.0",
+    "gaesup-state": "workspace:^",
     "fastify": "^4.24.0",
-    "fastify-cors": "^6.1.0",
-    "fastify-multipart": "^7.6.0",
-    "fastify-static": "^4.7.0",
-    "minio": "^7.1.0",
     "pino": "^8.17.0",
     "zod": "^3.22.0"
   },

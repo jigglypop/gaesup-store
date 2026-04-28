@@ -84,10 +84,41 @@ class MultiFrameworkApp {
   private mount(name: string, mountComponent: () => void) {
     try {
       mountComponent();
+      window.setTimeout(() => this.ensureMountRendered(name), 0);
       console.log(`${name} counter mounted`);
     } catch (error) {
       console.error(`${name} counter mount failed:`, error);
+      this.renderFallbackCard(name, error);
     }
+  }
+
+  private ensureMountRendered(name: string) {
+    const element = document.getElementById(`${name.toLowerCase()}-counter`);
+    if (element && element.childElementCount === 0) {
+      this.renderFallbackCard(name, new Error(`${name} mount produced no content`));
+    }
+  }
+
+  private renderFallbackCard(name: string, error: unknown) {
+    const element = document.getElementById(`${name.toLowerCase()}-counter`);
+    if (!element) {
+      return;
+    }
+
+    const message = error instanceof Error ? error.message : String(error);
+    element.innerHTML = `
+      <article class="counter-card" style="--accent: #ef6868">
+        <div>
+          <div class="framework-name">${name}</div>
+          <div class="card-title">마운트 실패</div>
+          <p class="card-copy">${this.escapeHtml(message)}</p>
+        </div>
+        <div>
+          <div class="count-value">-</div>
+          <div class="last-update">브라우저 콘솔 없이도 실패 위치를 표시합니다.</div>
+        </div>
+      </article>
+    `;
   }
 
   private updateSharedStatus(state: SharedState) {
@@ -127,25 +158,44 @@ class MultiFrameworkApp {
   private showError(error: unknown) {
     const overlay = document.getElementById('loading-overlay');
     const message = error instanceof Error ? error.message : String(error);
+    this.hideLoadingOverlay();
 
     if (overlay) {
+      overlay.classList.remove('hidden');
       overlay.innerHTML = `
         <div style="max-width: 520px; padding: 24px; text-align: center;">
           <h2 style="color: #ef4444; margin: 0 0 12px;">초기화 실패</h2>
-          <p style="margin: 0 0 18px; color: #cbd5e1;">${message}</p>
+          <p style="margin: 0 0 18px; color: #cbd5e1;">${this.escapeHtml(message)}</p>
           <button onclick="location.reload()">다시 불러오기</button>
         </div>
       `;
     }
   }
+
+  private escapeHtml(value: string) {
+    return value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
 }
 
 let app: MultiFrameworkApp;
 
-document.addEventListener('DOMContentLoaded', async () => {
+async function boot() {
   app = new MultiFrameworkApp();
   await app.init();
-});
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => {
+    boot().catch(console.error);
+  }, { once: true });
+} else {
+  boot().catch(console.error);
+}
 
 window.addEventListener('beforeunload', () => {
   app?.destroy();

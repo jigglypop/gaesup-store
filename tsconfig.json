@@ -23,7 +23,8 @@
     "baseUrl": ".",
     "paths": {
       "gaesup-state": ["./packages/core/src"],
-      "@gaesup-state/state": ["./packages/state/src"],
+      "gaesup-state/immer": ["./packages/core/src/immer.ts"],
+      "gaesup-state/middleware": ["./packages/core/src/middleware.ts"],
       "@gaesup-state/react": ["./packages/frameworks/react/src"],
       "@gaesup-state/vue": ["./packages/frameworks/vue/src"],
       "@gaesup-state/registry": ["./packages/registry/src"]

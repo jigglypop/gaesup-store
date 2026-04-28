@@ -170,9 +170,11 @@ cargo check --target wasm32-unknown-unknown --features wasm
 ```typescript
 const full = await GaesupRender.benchmarkMatrixBuffer(10000);
 const dirty = await GaesupRender.benchmarkDirtyMatrixBuffer(10000, 1000);
+const ranges = await GaesupRender.benchmarkDirtyMatrixRanges(10000, 1000, 1);
 ```
 
 `benchmarkMatrixBuffer`는 전체 matrix buffer를 만드는 비용을 봅니다. `benchmarkDirtyMatrixBuffer`는 전체 entity 중 일부만 dirty일 때의 비용을 봅니다.
+`benchmarkDirtyMatrixRanges`는 dirty instance를 WebGPU `queue.writeBuffer`에 넘기기 좋은 연속 range로 묶는 비용을 봅니다. 세 번째 인자가 `1`이면 dirty instance가 대부분 연속되어 range 수가 줄고, 큰 값이면 떨어진 index가 많아 range 수가 늘어납니다.
 
 ## JSON patch와 typed buffer 비교
 
@@ -239,7 +241,7 @@ useFrame(async (_, delta) => {
 | subscribe callback batching | WASM -> JS callback 비용 감소 |
 | dirty set을 numeric id 기반으로 전환 | dirty 추적 비용 감소 |
 | WASM memory view 재사용 | typed array 생성 비용 감소 |
-| GPU write range batching | `queue.writeBuffer` 호출 수 감소 |
+| material/uniform dirty range | transform 외 GPU 상태도 같은 경로로 처리 |
 | worker runtime | UI thread 부담 감소 |
 | schema별 typed store | `JsValue` 변환 비용 감소 |
 

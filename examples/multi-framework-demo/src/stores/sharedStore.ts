@@ -30,7 +30,7 @@ export const SHARED_STORE_ID = 'multi-framework-demo';
 export async function initializeSharedStore(): Promise<void> {
   try {
     await GaesupCore.createStore(SHARED_STORE_ID, initialState);
-    console.log('✅ Shared store initialized');
+    console.log('Shared store initialized');
   } catch (error) {
     // 이미 존재하는 경우 무시
     const message = error instanceof Error ? error.message : String(error);
@@ -145,7 +145,7 @@ export function connectDevTools() {
       devtools.send('STATE_UPDATE', state);
     });
 
-    console.log('🔧 Redux DevTools connected');
+    console.log('Redux DevTools connected');
   }
 }
 

@@ -115,6 +115,18 @@ measure('dispatch MERGE path subscriber', 10000, (i) => {
 });
 wasm.unsubscribe(pathSub);
 
+const renderDirtyBuffer = wasm.benchmark_render_dirty_matrix_buffer(10000, 1000);
+const renderDirtyRangesPacked = wasm.benchmark_render_dirty_matrix_ranges(10000, 1000, 1);
+const renderDirtyRangesSparse = wasm.benchmark_render_dirty_matrix_ranges(10000, 1000, 4);
+
+console.log('\nRender/WebGPU state probes');
+console.log('-'.repeat(74));
+console.log(`dirty matrix buffer 10k/1k`.padEnd(36) + `${renderDirtyBuffer.dirtyMatrixBufferMs.toFixed(3)} ms`.padStart(24));
+console.log(`dirty matrix ranges packed`.padEnd(36) + `${renderDirtyRangesPacked.dirtyMatrixRangeMs.toFixed(3)} ms`.padStart(24));
+console.log(`dirty matrix ranges sparse`.padEnd(36) + `${renderDirtyRangesSparse.dirtyMatrixRangeMs.toFixed(3)} ms`.padStart(24));
+console.log(`packed range count`.padEnd(36) + String(renderDirtyRangesPacked.rangeCount).padStart(24));
+console.log(`sparse range count`.padEnd(36) + String(renderDirtyRangesSparse.rangeCount).padStart(24));
+
 for (const storeId of [
   'probe-select',
   'probe-set',
