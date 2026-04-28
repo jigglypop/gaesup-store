@@ -5,6 +5,8 @@ use wasm_bindgen::prelude::*;
 
 mod compatibility;
 mod container;
+mod render_math;
+mod render;
 mod store;
 
 #[wasm_bindgen]

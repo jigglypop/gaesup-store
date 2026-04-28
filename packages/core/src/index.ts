@@ -284,5 +284,207 @@ export function getDevToolsBridge() {
   return new ReduxDevToolsBridge();
 }
 
+export const GaesupRender = {
+  async createStore(storeId: string, initialScreen = 'main') {
+    await ensureReady();
+    return (wasm as any).create_render_store(storeId, initialScreen);
+  },
+  async createEntity(storeId: string, entity: {
+    id?: string;
+    instanceIndex?: number;
+    transform?: {
+      position?: [number, number, number];
+      rotation?: [number, number, number];
+      scale?: [number, number, number];
+    };
+    materialId?: string;
+    meshId?: string;
+    visible?: boolean;
+  }) {
+    await ensureReady();
+    return (wasm as any).create_render_entity(storeId, entity) as string;
+  },
+  async setTransform(storeId: string, entityId: string, transform: {
+    position?: [number, number, number];
+    rotation?: [number, number, number];
+    scale?: [number, number, number];
+  }) {
+    await ensureReady();
+    return (wasm as any).set_render_transform(storeId, entityId, transform);
+  },
+  async rotateY(storeId: string, entityId: string, radians: number) {
+    await ensureReady();
+    return (wasm as any).rotate_render_entity_y(storeId, entityId, radians);
+  },
+  async beginScreenTransition(storeId: string, toScreen: string, durationMs: number, easing = 'linear') {
+    await ensureReady();
+    return (wasm as any).begin_screen_transition(storeId, toScreen, durationMs, easing);
+  },
+  async tickFrame(storeId: string, deltaMs: number) {
+    await ensureReady();
+    return (wasm as any).tick_render_frame(storeId, deltaMs);
+  },
+  getPatches(storeId: string) {
+    requireReady();
+    return (wasm as any).get_render_patches(storeId);
+  },
+  getMatrixBuffer(storeId: string) {
+    requireReady();
+    return (wasm as any).get_render_matrix_buffer(storeId);
+  },
+  getDirtyMatrixBuffer(storeId: string): { count: number; instanceIndices: Uint32Array; matrices: Float32Array } {
+    requireReady();
+    return (wasm as any).get_render_dirty_matrix_buffer(storeId);
+  },
+  async benchmarkMatrixBuffer(entityCount: number) {
+    await ensureReady();
+    return (wasm as any).benchmark_render_matrix_buffer(entityCount);
+  },
+  async benchmarkDirtyMatrixBuffer(entityCount: number, dirtyCount: number) {
+    await ensureReady();
+    return (wasm as any).benchmark_render_dirty_matrix_buffer(entityCount, dirtyCount);
+  },
+  cleanup(storeId: string) {
+    return (wasm as any).cleanup_render_store(storeId);
+  }
+};
+
+export interface GaesupRenderObject {
+  matrix?: {
+    fromArray?: (values: ArrayLike<number>) => unknown;
+    elements?: number[];
+  };
+  matrixAutoUpdate?: boolean;
+  position?: { set: (x: number, y: number, z: number) => unknown };
+  rotation?: { set: (x: number, y: number, z: number) => unknown };
+  scale?: { set: (x: number, y: number, z: number) => unknown };
+}
+
+export interface GaesupRenderBridgeOptions {
+  storeId: string;
+  gpuDevice?: any;
+  matrixBuffer?: any;
+  matrixStrideBytes?: number;
+}
+
+export interface GaesupInstancedWriter {
+  setMatrixAt?: (index: number, matrix: number[]) => unknown;
+  writeMatrices?: (matrices: Float32Array, entities: any[]) => unknown;
+  writeDirtyMatrices?: (indices: Uint32Array, matrices: Float32Array) => unknown;
+  instanceMatrix?: { needsUpdate?: boolean };
+}
+
+export class GaesupRenderBridge {
+  private readonly objects = new Map<string, GaesupRenderObject>();
+  private readonly matrixOffsets = new Map<string, number>();
+  private instancedWriter: GaesupInstancedWriter | null = null;
+
+  constructor(private readonly options: GaesupRenderBridgeOptions) {}
+
+  bindObject(entityId: string, object: GaesupRenderObject, matrixOffset = this.matrixOffsets.size) {
+    object.matrixAutoUpdate = false;
+    this.objects.set(entityId, object);
+    this.matrixOffsets.set(entityId, matrixOffset);
+  }
+
+  unbindObject(entityId: string) {
+    this.objects.delete(entityId);
+    this.matrixOffsets.delete(entityId);
+  }
+
+  bindInstancedWriter(writer: GaesupInstancedWriter) {
+    this.instancedWriter = writer;
+  }
+
+  async syncMatrixBuffer() {
+    const buffer = GaesupRender.getMatrixBuffer(this.options.storeId);
+    const matrices = new Float32Array(buffer.matrices);
+    this.instancedWriter?.writeMatrices?.(matrices, buffer.entities);
+    if (this.options.gpuDevice && this.options.matrixBuffer) {
+      this.options.gpuDevice.queue.writeBuffer(this.options.matrixBuffer, 0, matrices);
+    }
+    return buffer;
+  }
+
+  syncDirtyMatrixBuffer() {
+    const buffer = GaesupRender.getDirtyMatrixBuffer(this.options.storeId);
+    this.instancedWriter?.writeDirtyMatrices?.(buffer.instanceIndices, buffer.matrices);
+
+    if (this.instancedWriter?.setMatrixAt) {
+      for (let i = 0; i < buffer.count; i++) {
+        const matrix = Array.from(buffer.matrices.subarray(i * 16, i * 16 + 16));
+        this.instancedWriter.setMatrixAt(buffer.instanceIndices[i], matrix);
+      }
+      if (this.instancedWriter.instanceMatrix) {
+        this.instancedWriter.instanceMatrix.needsUpdate = true;
+      }
+    }
+
+    if (this.options.gpuDevice && this.options.matrixBuffer) {
+      const stride = this.options.matrixStrideBytes || 64;
+      for (let i = 0; i < buffer.count; i++) {
+        this.options.gpuDevice.queue.writeBuffer(
+          this.options.matrixBuffer,
+          buffer.instanceIndices[i] * stride,
+          buffer.matrices.subarray(i * 16, i * 16 + 16)
+        );
+      }
+    }
+
+    return buffer;
+  }
+
+  async tick(deltaMs: number) {
+    const patches = await GaesupRender.tickFrame(this.options.storeId, deltaMs);
+    this.applyPatches(patches);
+    return patches;
+  }
+
+  applyPatches(patches: any) {
+    for (const patch of patches?.dirty?.transforms || []) {
+      this.applyTransformPatch(patch);
+    }
+  }
+
+  private applyTransformPatch(patch: any) {
+    const matrix = patch.matrix as number[] | undefined;
+    if (!matrix) return;
+    const instanceIndex = patch.instanceIndex as number | undefined;
+
+    const object = this.objects.get(patch.entityId);
+    if (object) {
+      if (object.matrix?.fromArray) {
+        object.matrix.fromArray(matrix);
+      } else if (object.matrix?.elements) {
+        object.matrix.elements.splice(0, 16, ...matrix);
+      } else if (patch.transform) {
+        const { position, rotation, scale } = patch.transform;
+        object.position?.set(position[0], position[1], position[2]);
+        object.rotation?.set(rotation[0], rotation[1], rotation[2]);
+        object.scale?.set(scale[0], scale[1], scale[2]);
+      }
+    }
+
+    if (this.instancedWriter?.setMatrixAt && instanceIndex !== undefined) {
+      this.instancedWriter.setMatrixAt(instanceIndex, matrix);
+      if (this.instancedWriter.instanceMatrix) {
+        this.instancedWriter.instanceMatrix.needsUpdate = true;
+      }
+    }
+
+    if (this.options.gpuDevice && this.options.matrixBuffer) {
+      const offset = this.matrixOffsets.get(patch.entityId) ?? instanceIndex;
+      if (offset !== undefined) {
+        const stride = this.options.matrixStrideBytes || 64;
+        this.options.gpuDevice.queue.writeBuffer(
+          this.options.matrixBuffer,
+          offset * stride,
+          new Float32Array(matrix)
+        );
+      }
+    }
+  }
+}
+
 export type StateListener<T = any> = (state: T) => void;
 export { ensureReady as initGaesupCore };
