@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { GaesupCore } from '@gaesup-state/core';
+import { GaesupCore } from 'gaesup-state';
 import { createGaesupStore, useSelector, useDispatch } from '@gaesup-state/react';
 import { defineStore as defineVueStore } from '@gaesup-state/vue';
 import { gaesupStore as createSvelteStore } from '@gaesup-state/svelte';
-import { produce, createSlice } from '@gaesup-state/core/immer';
-import { logger, thunk, devTools } from '@gaesup-state/core/middleware';
+import { produce, createSlice } from 'gaesup-state/immer';
+import { logger, thunk, devTools } from 'gaesup-state/middleware';
 
 describe('Multi-Framework Integration Tests', () => {
   const STORE_ID = 'integration-test';

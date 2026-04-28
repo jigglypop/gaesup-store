@@ -57,7 +57,7 @@ importers:
       '@gaesup-state/angular':
         specifier: workspace:*
         version: link:../../packages/frameworks/angular
-      '@gaesup-state/core':
+      'gaesup-state':
         specifier: workspace:*
         version: link:../../packages/core
       '@gaesup-state/react':
@@ -139,7 +139,7 @@ importers:
 
   examples/todo-app:
     dependencies:
-      '@gaesup-state/core':
+      'gaesup-state':
         specifier: workspace:^
         version: link:../../packages/core
       '@gaesup-state/react':
@@ -170,8 +170,8 @@ importers:
 
   packages/adapter:
     dependencies:
-      '@gaesup-state/core':
-        specifier: workspace:^
+      'gaesup-state':
+        specifier: 0.0.1
         version: link:../core
     devDependencies:
       typescript:
@@ -186,19 +186,13 @@ importers:
 
   packages/core:
     dependencies:
-      '@gaesup-state/core-rust':
-        specifier: workspace:*
+      'gaesup-state-core-rust':
+        specifier: 0.0.1
         version: link:../core-rust
     devDependencies:
-      '@types/node':
-        specifier: ^20.10.0
-        version: 20.19.9
       typescript:
         specifier: ^5.3.0
         version: 5.8.3
-      vite:
-        specifier: ^5.0.0
-        version: 5.4.19(@types/node@20.19.9)
       vitest:
         specifier: ^1.0.0
         version: 1.6.1(@types/node@20.19.9)
@@ -208,10 +202,10 @@ importers:
   packages/frameworks/angular:
     dependencies:
       '@gaesup-state/adapter':
-        specifier: workspace:^
+        specifier: 0.0.1
         version: link:../../adapter
-      '@gaesup-state/core':
-        specifier: workspace:^
+      'gaesup-state':
+        specifier: 0.0.1
         version: link:../../core
       tslib:
         specifier: ^2.6.0
@@ -238,8 +232,8 @@ importers:
 
   packages/frameworks/react:
     dependencies:
-      '@gaesup-state/core':
-        specifier: workspace:*
+      'gaesup-state':
+        specifier: 0.0.1
         version: link:../../core
     devDependencies:
       '@types/react':
@@ -251,14 +245,17 @@ importers:
       typescript:
         specifier: ^5.3.0
         version: 5.8.3
+      vitest:
+        specifier: ^1.0.0
+        version: 1.6.1(@types/node@20.19.9)
 
   packages/frameworks/svelte:
     dependencies:
       '@gaesup-state/adapter':
-        specifier: workspace:^
+        specifier: 0.0.1
         version: link:../../adapter
-      '@gaesup-state/core':
-        specifier: workspace:^
+      'gaesup-state':
+        specifier: 0.0.1
         version: link:../../core
     devDependencies:
       '@sveltejs/vite-plugin-svelte':
@@ -280,10 +277,10 @@ importers:
   packages/frameworks/vue:
     dependencies:
       '@gaesup-state/adapter':
-        specifier: workspace:^
+        specifier: 0.0.1
         version: link:../../adapter
-      '@gaesup-state/core':
-        specifier: workspace:^
+      'gaesup-state':
+        specifier: 0.0.1
         version: link:../../core
     devDependencies:
       '@vue/composition-api':
@@ -304,7 +301,7 @@ importers:
 
   tools/container-builder:
     dependencies:
-      '@gaesup-state/core':
+      'gaesup-state':
         specifier: workspace:^
         version: link:../../packages/core
       chalk:

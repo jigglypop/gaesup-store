@@ -1,5 +1,5 @@
 import type { Readable } from 'svelte/store'
-import type { ContainerConfig, ContainerInstance } from '@gaesup-state/core'
+import type { ContainerConfig, ContainerInstance } from 'gaesup-state'
 
 export interface ContainerStoreOptions<T> {
   initialState?: T

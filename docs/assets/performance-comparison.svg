@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="620" viewBox="0 0 980 620" role="img" aria-labelledby="title desc">
+  <title id="title">Gaesup-State performance comparison</title>
+  <desc id="desc">Bar charts comparing Gaesup-State, Zustand, Jotai, and Redux benchmark results. Lower microseconds per operation is better.</desc>
+  <style>
+    .bg { fill: #f8fafc; }
+    .panel { fill: #ffffff; stroke: #cbd5e1; stroke-width: 1; }
+    .title { font: 700 24px Arial, sans-serif; fill: #0f172a; }
+    .subtitle { font: 400 13px Arial, sans-serif; fill: #475569; }
+    .axis { stroke: #94a3b8; stroke-width: 1; }
+    .tick { font: 12px Arial, sans-serif; fill: #64748b; }
+    .label { font: 600 13px Arial, sans-serif; fill: #1e293b; }
+    .value { font: 600 12px Arial, sans-serif; fill: #0f172a; }
+    .note { font: 400 12px Arial, sans-serif; fill: #64748b; }
+    .gaesup { fill: #0f766e; }
+    .zustand { fill: #2563eb; }
+    .jotai { fill: #9333ea; }
+    .redux { fill: #dc2626; }
+    .muted { fill: #94a3b8; }
+  </style>
+  <rect class="bg" width="980" height="620" rx="0"/>
+  <text x="40" y="44" class="title">State Update Benchmarks</text>
+  <text x="40" y="68" class="subtitle">Lower is better. Node.js v24.13.0, Windows local run. Gaesup fast paths cross the JS/WASM boundary.</text>
+
+  <rect class="panel" x="40" y="96" width="900" height="210" rx="8"/>
+  <text x="64" y="126" class="label">Single increment update, microseconds per operation</text>
+  <text x="64" y="148" class="note">Fast-path comparison. Rich history/subscriber paths are intentionally excluded here.</text>
+  <line class="axis" x1="260" y1="270" x2="860" y2="270"/>
+  <text x="260" y="290" class="tick">0</text>
+  <text x="456" y="290" class="tick">0.5</text>
+  <text x="656" y="290" class="tick">1.0</text>
+  <text x="846" y="290" class="tick">1.5 us</text>
+
+  <text x="64" y="178" class="label">Redux fast</text>
+  <rect class="redux" x="260" y="164" width="63" height="16" rx="3"/>
+  <text x="332" y="177" class="value">0.158</text>
+
+  <text x="64" y="208" class="label">Zustand fast</text>
+  <rect class="zustand" x="260" y="194" width="74" height="16" rx="3"/>
+  <text x="343" y="207" class="value">0.186</text>
+
+  <text x="64" y="238" class="label">Gaesup unchecked handle</text>
+  <rect class="gaesup" x="260" y="224" width="77" height="16" rx="3"/>
+  <text x="346" y="237" class="value">0.193</text>
+
+  <text x="64" y="268" class="label">Gaesup checked handle</text>
+  <rect class="gaesup" x="260" y="254" width="118" height="16" rx="3" opacity="0.82"/>
+  <text x="387" y="267" class="value">0.295</text>
+
+  <text x="540" y="178" class="label">Jotai fast</text>
+  <rect class="jotai" x="620" y="164" width="572" height="16" rx="3" transform="scale(0.75 1) translate(206 0)"/>
+  <text x="842" y="177" class="value">1.431</text>
+
+  <rect class="panel" x="40" y="336" width="900" height="230" rx="8"/>
+  <text x="64" y="366" class="label">Batch 1000 increments, microseconds per operation</text>
+  <text x="64" y="388" class="note">Log-scale bars because Jotai is much larger in this benchmark. Lower is better.</text>
+  <line class="axis" x1="260" y1="532" x2="860" y2="532"/>
+  <text x="260" y="552" class="tick">0.1</text>
+  <text x="410" y="552" class="tick">1</text>
+  <text x="560" y="552" class="tick">10</text>
+  <text x="710" y="552" class="tick">100</text>
+  <text x="842" y="552" class="tick">1000 us</text>
+
+  <text x="64" y="418" class="label">Gaesup handle batch</text>
+  <rect class="gaesup" x="260" y="404" width="102" height="16" rx="3"/>
+  <text x="372" y="417" class="value">0.325</text>
+
+  <text x="64" y="448" class="label">Gaesup fast batch</text>
+  <rect class="gaesup" x="260" y="434" width="138" height="16" rx="3" opacity="0.82"/>
+  <text x="408" y="447" class="value">0.523</text>
+
+  <text x="64" y="478" class="label">Zustand loop batch</text>
+  <rect class="zustand" x="260" y="464" width="410" height="16" rx="3"/>
+  <text x="680" y="477" class="value">54.371</text>
+
+  <text x="64" y="508" class="label">Redux loop batch</text>
+  <rect class="redux" x="260" y="494" width="425" height="16" rx="3"/>
+  <text x="695" y="507" class="value">68.217</text>
+
+  <text x="64" y="538" class="label">Jotai loop batch</text>
+  <rect class="jotai" x="260" y="524" width="592" height="16" rx="3"/>
+  <text x="862" y="537" class="value">905.661</text>
+
+  <text x="40" y="598" class="note">Interpretation: single tiny JS updates can still favor plain JS stores. Gaesup's advantage appears when updates are batched, isolated, schema-checked, or moved to render/counter fast paths.</text>
+</svg>

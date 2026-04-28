@@ -1,19 +1,76 @@
 {
-  "name": "@gaesup-state/core-rust",
-  "version": "0.2.0",
-  "main": "pkg/gaesup_state_core.js",
-  "module": "pkg/gaesup_state_core.js",
-  "types": "pkg/gaesup_state_core.d.ts",
-  "scripts": {
-    "build": "pnpm run build:bundler && pnpm run build:web && pnpm run build:node",
-    "build:bundler": "wasm-pack build --target bundler --out-dir pkg -- --features wasm",
-    "build:web": "wasm-pack build --target web --out-dir pkg-web -- --features wasm",
-    "build:node": "wasm-pack build --target nodejs --out-dir pkg-node -- --features wasm",
-    "test": "wasm-pack test --chrome --headless"
+  "name": "gaesup-state-core-rust",
+  "version": "0.0.1",
+  "description": "Rust/WASM runtime for Gaesup-State stores, containers, compatibility checks, and render state",
+  "license": "MIT",
+  "homepage": "https://github.com/gaesup/gaesup-state#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gaesup/gaesup-state.git",
+    "directory": "packages/core-rust"
+  },
+  "bugs": {
+    "url": "https://github.com/gaesup/gaesup-state/issues"
+  },
+  "keywords": [
+    "wasm",
+    "webassembly",
+    "rust",
+    "state-management",
+    "container-runtime",
+    "webgpu"
+  ],
+  "main": "./pkg/gaesup_state_core.js",
+  "module": "./pkg/gaesup_state_core.js",
+  "types": "./pkg/gaesup_state_core.d.ts",
+  "exports": {
+    ".": {
+      "types": "./pkg/gaesup_state_core.d.ts",
+      "import": "./pkg/gaesup_state_core.js",
+      "default": "./pkg/gaesup_state_core.js"
+    },
+    "./web": {
+      "types": "./pkg-web/gaesup_state_core.d.ts",
+      "import": "./pkg-web/gaesup_state_core.js",
+      "default": "./pkg-web/gaesup_state_core.js"
+    },
+    "./node": {
+      "types": "./pkg-node/gaesup_state_core.d.ts",
+      "require": "./pkg-node/gaesup_state_core.js",
+      "default": "./pkg-node/gaesup_state_core.js"
+    },
+    "./bundler": {
+      "types": "./pkg/gaesup_state_core.d.ts",
+      "import": "./pkg/gaesup_state_core.js",
+      "default": "./pkg/gaesup_state_core.js"
+    },
+    "./package.json": "./package.json"
   },
   "files": [
     "pkg",
     "pkg-web",
-    "pkg-node"
+    "pkg-node",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "pnpm run build:bundler && pnpm run build:web && pnpm run build:node && pnpm run prepare:npm-files",
+    "build:bundler": "wasm-pack build --target bundler --out-dir pkg -- --features wasm",
+    "build:web": "wasm-pack build --target web --out-dir pkg-web -- --features wasm",
+    "build:node": "wasm-pack build --target nodejs --out-dir pkg-node -- --features wasm",
+    "test": "wasm-pack test --chrome --headless",
+    "prepare:npm-files": "node ../../scripts/prepare-wasm-npmignore.cjs",
+    "pack:dry": "pnpm run prepare:npm-files && npm pack --dry-run"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "sideEffects": [
+    "./pkg/gaesup_state_core.js",
+    "./pkg-web/gaesup_state_core.js",
+    "./pkg-node/gaesup_state_core.js",
+    "./pkg/snippets/*",
+    "./pkg-web/snippets/*",
+    "./pkg-node/snippets/*"
   ]
 } 

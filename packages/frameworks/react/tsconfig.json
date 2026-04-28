@@ -14,7 +14,7 @@
     "jsx": "react-jsx",
     "baseUrl": ".",
     "paths": {
-      "@gaesup-state/core": ["../../core/dist/index.d.ts"],
+      "gaesup-state": ["../../core/dist/index.d.ts"],
       "@gaesup-state/adapter": ["../../adapter/dist/index.d.ts"]
     },
     "noUnusedLocals": false,

@@ -48,7 +48,7 @@ pnpm run build:wasm
 ## TypeScript 빌드
 
 ```bash
-pnpm --filter @gaesup-state/core run build
+pnpm --filter gaesup-state run build
 pnpm -r --filter "./packages/**" run build
 ```
 

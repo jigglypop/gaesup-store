@@ -1,4 +1,4 @@
-import type { ContainerConfig, ContainerManagerConfig } from '@gaesup-state/core'
+import type { ContainerConfig, ContainerManagerConfig } from 'gaesup-state'
 
 export interface ContainerServiceConfig<T = any> {
   initialState?: T

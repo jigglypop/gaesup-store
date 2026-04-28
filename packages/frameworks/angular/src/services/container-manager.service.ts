@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core'
-import { ContainerManager, type ContainerManagerConfig } from '@gaesup-state/core'
+import { ContainerManager, type ContainerManagerConfig } from 'gaesup-state'
 
 @Injectable({ providedIn: 'root' })
 export class ContainerManagerService {

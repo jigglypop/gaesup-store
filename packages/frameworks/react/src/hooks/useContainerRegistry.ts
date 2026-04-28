@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react'
-import type { ContainerMetadata } from '@gaesup-state/core'
+import type { ContainerMetadata } from 'gaesup-state'
 import type { ContainerData, UseContainerRegistryResult } from '../types'
 
 export function useContainerRegistry(): UseContainerRegistryResult {

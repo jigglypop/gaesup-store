@@ -55,7 +55,7 @@ TypeScript wrapper는 현재 `pkg-web`의 WASM 모듈을 사용합니다.
 ## TypeScript 패키지 빌드
 
 ```bash
-pnpm --filter @gaesup-state/core run build
+pnpm --filter gaesup-state run build
 ```
 
 전체 패키지를 빌드하려면 다음 명령을 씁니다.
@@ -84,7 +84,7 @@ http://localhost:3000/
 ## 기본 store 만들기
 
 ```typescript
-import { GaesupCore } from '@gaesup-state/core';
+import { GaesupCore } from 'gaesup-state';
 
 await GaesupCore.createStore('shared', {
   count: 0,
@@ -184,7 +184,7 @@ GaesupCore.registerStoreSchema({
 ## manifest 검증
 
 ```typescript
-import { CompatibilityGuard } from '@gaesup-state/core';
+import { CompatibilityGuard } from 'gaesup-state';
 
 const guard = new CompatibilityGuard({
   abiVersion: '1.0.0',
@@ -225,7 +225,7 @@ const result = guard.validate({
 ## Render runtime 빠른 예시
 
 ```typescript
-import { GaesupRender, GaesupRenderBridge } from '@gaesup-state/core';
+import { GaesupRender, GaesupRenderBridge } from 'gaesup-state';
 
 await GaesupRender.createStore('scene', 'home');
 
@@ -276,7 +276,7 @@ $env:PATH="$env:USERPROFILE\.cargo\bin;$env:PATH"
 `select`와 `subscribe`는 WASM 초기화 이후에 호출해야 합니다. 먼저 `createStore` 또는 `initGaesupCore()`를 `await` 하세요.
 
 ```typescript
-import { initGaesupCore } from '@gaesup-state/core';
+import { initGaesupCore } from 'gaesup-state';
 
 await initGaesupCore();
 ```

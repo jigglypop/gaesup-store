@@ -12,7 +12,7 @@
     "clean": "rm -rf dist node_modules"
   },
   "dependencies": {
-    "@gaesup-state/core": "workspace:*",
+    "gaesup-state": "workspace:*",
     "@gaesup-state/adapter": "workspace:*",
     "@gaesup-state/react": "workspace:*",
     "@gaesup-state/vue": "workspace:*",

@@ -12,7 +12,7 @@ Rust/WASM core는 실제 상태와 manifest 검증 로직을 들고 있습니다
 
 ```text
 application
-  -> @gaesup-state/core TypeScript API
+  -> gaesup-state TypeScript API
   -> Rust WASM core
   -> store / compatibility / container / render modules
 ```

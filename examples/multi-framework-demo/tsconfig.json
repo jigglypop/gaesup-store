@@ -40,8 +40,8 @@
       "@utils/*": ["src/utils/*"],
       
       /* 워크스페이스 패키지 */
-      "@gaesup-state/core": ["../../packages/core/src"],
-      "@gaesup-state/core/*": ["../../packages/core/src/*"],
+      "gaesup-state": ["../../packages/core/src"],
+      "gaesup-state/*": ["../../packages/core/src/*"],
       "@gaesup-state/adapter": ["../../packages/adapter/src"],
       "@gaesup-state/adapter/*": ["../../packages/adapter/src/*"],
       "@gaesup-state/react": ["../../packages/frameworks/react/src"],

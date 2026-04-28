@@ -1,5 +1,5 @@
-import { createOptimalContainerManager, WASMContainerManager, ContainerManager, getDevToolsBridge, ReduxDevToolsBridge } from '@gaesup-state/core';
-import type { ContainerConfig } from '@gaesup-state/core';
+import { createOptimalContainerManager, WASMContainerManager, ContainerManager, getDevToolsBridge, ReduxDevToolsBridge } from 'gaesup-state';
+import type { ContainerConfig } from 'gaesup-state';
 // TODO: adapter 패키지 완성 후 다시 활성화
 // import { createFrameworkAdapter } from '@gaesup-state/adapter';
 
@@ -48,7 +48,7 @@ export class SharedContainerManager {
       });
 
       // WASM 매니저인지 확인
-      this.isWasmEnabled = this.containerManager instanceof (await import('@gaesup-state/core')).WASMContainerManager;
+      this.isWasmEnabled = this.containerManager instanceof (await import('gaesup-state')).WASMContainerManager;
       
       console.log(`✅ 컨테이너 매니저 초기화 완료 (${this.isWasmEnabled ? 'WASM' : 'TypeScript'})`);
       

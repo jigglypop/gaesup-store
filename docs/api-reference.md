@@ -9,7 +9,7 @@ import {
   ContainerManager,
   GaesupRender,
   GaesupRenderBridge
-} from '@gaesup-state/core';
+} from 'gaesup-state';
 ```
 
 ## 초기화
@@ -23,7 +23,7 @@ await GaesupCore.createStore('main', {});
 동기 API인 `select`, `subscribe`, `CompatibilityGuard.validate`를 먼저 호출해야 한다면 초기화를 명시합니다.
 
 ```typescript
-import { initGaesupCore } from '@gaesup-state/core';
+import { initGaesupCore } from 'gaesup-state';
 
 await initGaesupCore();
 ```
@@ -534,3 +534,83 @@ const bridge = new GaesupRenderBridge({
 ```
 
 dirty matrix마다 `device.queue.writeBuffer`를 호출합니다. entity가 많아지면 이후 단계에서 write range batching을 적용할 수 있습니다.
+## Auto store
+
+### gaesup
+
+```typescript
+const state = gaesup('store-id', {
+  count: 0,
+  user: { name: 'Ada' }
+});
+
+state.count += 1;
+state.user.name = 'Grace';
+
+await state.$flush();
+```
+
+객체를 직접 수정하면 변경 path가 자동으로 추적됩니다. store id가 필요 없으면 `gaesup(initialState)`처럼 initial state만 넘길 수 있습니다.
+
+### watch
+
+```typescript
+const off = watch(
+  state,
+  (draft) => draft.user.name,
+  (name) => console.log(name)
+);
+```
+
+selector가 읽은 path만 의존성으로 수집합니다. 관련 없는 path가 바뀌면 listener를 다시 부르지 않습니다.
+
+### atom
+
+```typescript
+const count = atom(0);
+
+count.value += 1;
+await count.set((value) => value + 1);
+```
+
+값 하나만 관리할 때 쓰는 작은 store입니다.
+
+### resource / query
+
+```typescript
+const todos = resource('todos', fetchTodos, {
+  enabled: false,
+  staleTime: 60_000
+});
+
+await todos.refetch();
+await todos.mutate((previous = []) => [...previous, optimisticTodo]);
+await todos.invalidate();
+```
+
+API 요청 상태를 store와 같은 객체에서 관리합니다. `data`, `error`, `status`, `isLoading`, `isFetching`, `isStale`, `updatedAt`을 제공합니다. `query`는 `resource`의 alias입니다.
+
+## Dispatch pipeline
+
+```typescript
+const pipe = GaesupCore.pipeline('editor', {
+  autoFlush: false
+});
+
+pipe.update('document.title', 'New title');
+pipe.merge({ dirty: true });
+pipe.delete('draft.error');
+
+await pipe.flush();
+```
+
+같은 tick 안에서 발생한 여러 action을 모아 `BATCH` 한 번으로 보냅니다. 같은 path의 `UPDATE` 또는 `DELETE`가 반복되면 마지막 mutation만 유지합니다.
+
+```typescript
+const pipe = GaesupCore.createPipeline('counter');
+
+pipe.update('count', 1);
+pipe.update('count', 2);
+```
+
+`autoFlush` 기본값은 `true`입니다. 수동 flush를 원하면 `autoFlush: false`를 사용합니다.

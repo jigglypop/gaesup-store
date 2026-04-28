@@ -1,5 +1,5 @@
 import type { App } from 'vue'
-import type { ContainerManagerConfig } from '@gaesup-state/core'
+import type { ContainerManagerConfig } from 'gaesup-state'
 import { provideContainerManager } from '../composables/useContainerManager'
 
 export const GaesupStatePlugin = {

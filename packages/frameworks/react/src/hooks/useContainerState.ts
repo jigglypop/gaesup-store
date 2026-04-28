@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import type { ContainerInstance, ContainerConfig } from '@gaesup-state/core'
+import type { ContainerInstance, ContainerConfig } from 'gaesup-state'
 import type { UseContainerStateOptions, UseContainerStateResult } from '../types'
 import { useContainerContext } from '../context/ContainerContext'
 

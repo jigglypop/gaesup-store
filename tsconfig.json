@@ -22,7 +22,7 @@
     // 경로 매핑
     "baseUrl": ".",
     "paths": {
-      "@gaesup-state/core": ["./packages/core/src"],
+      "gaesup-state": ["./packages/core/src"],
       "@gaesup-state/state": ["./packages/state/src"],
       "@gaesup-state/react": ["./packages/frameworks/react/src"],
       "@gaesup-state/vue": ["./packages/frameworks/vue/src"],

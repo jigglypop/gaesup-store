@@ -1,5 +1,5 @@
 import { writable } from 'svelte/store'
-import { ContainerManager, type ContainerManagerConfig } from '@gaesup-state/core'
+import { ContainerManager, type ContainerManagerConfig } from 'gaesup-state'
 
 export function createContainerManagerStore(config: ContainerManagerConfig = {}) {
   const manager = new ContainerManager(config)

@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { writable, derived, get, type Readable, type Writable } from 'svelte/store';
-import { GaesupCore } from '@gaesup-state/core';
+import { GaesupCore } from 'gaesup-state';
 
 // ===== Svelte 개발자가 사용하는 메인 스토어 (Svelte store와 동일) =====
 

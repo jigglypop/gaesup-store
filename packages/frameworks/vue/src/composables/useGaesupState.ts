@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { ref, computed, reactive, readonly, watch, onUnmounted, Ref, ComputedRef } from 'vue';
-import { GaesupCore } from '@gaesup-state/core';
+import { GaesupCore } from 'gaesup-state';
 
 // Pinia와 유사한 인터페이스
 export interface StoreDefinition<T = any> {

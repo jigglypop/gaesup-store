@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { ContainerMetrics } from '@gaesup-state/core'
+import type { ContainerMetrics } from 'gaesup-state'
 import type { UseContainerMetricsOptions } from '../types'
 import { useContainerContext } from '../context/ContainerContext'
 

@@ -2,7 +2,7 @@ import { Injectable, signal, computed, effect, DestroyRef, inject } from '@angul
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop'
 import { BehaviorSubject, Observable, from, EMPTY } from 'rxjs'
 import { catchError, switchMap, retry, delay } from 'rxjs/operators'
-import type { ContainerInstance, ContainerConfig } from '@gaesup-state/core'
+import type { ContainerInstance, ContainerConfig } from 'gaesup-state'
 import { ContainerManagerService } from './container-manager.service'
 import type { ContainerServiceConfig } from '../types'
 

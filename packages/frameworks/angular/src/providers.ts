@@ -1,5 +1,5 @@
 import { InjectionToken, Provider } from '@angular/core'
-import type { ContainerManagerConfig } from '@gaesup-state/core'
+import type { ContainerManagerConfig } from 'gaesup-state'
 import { ContainerManagerService } from './services/container-manager.service'
 
 export const GAESUP_STATE_CONFIG = new InjectionToken<ContainerManagerConfig>('GAESUP_STATE_CONFIG')

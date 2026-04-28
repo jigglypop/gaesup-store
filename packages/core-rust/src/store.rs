@@ -618,12 +618,58 @@ fn apply_action(current: &Value, action_type: &str, payload: Value) -> Result<Va
                     .and_then(Value::as_str)
                     .unwrap_or("UPDATE");
                 let nested_payload = update.get("payload").cloned().unwrap_or_else(|| update.clone());
-                next = apply_action(&next, nested_action_type, nested_payload)?;
+                apply_action_mut(&mut next, nested_action_type, nested_payload)?;
             }
 
             Ok(next)
         }
         _ => Ok(current.clone()),
+    }
+}
+
+fn apply_action_mut(state: &mut Value, action_type: &str, payload: Value) -> Result<(), JsValue> {
+    match action_type {
+        "SET" => {
+            *state = payload;
+            Ok(())
+        }
+        "MERGE" => {
+            *state = merge_state(state, payload);
+            Ok(())
+        }
+        "UPDATE" => {
+            let path = payload
+                .get("path")
+                .and_then(Value::as_str)
+                .ok_or_else(|| js_error("UPDATE requires payload.path"))?;
+            let value = payload.get("value").cloned().unwrap_or(Value::Null);
+            set_path(state, path, value);
+            Ok(())
+        }
+        "DELETE" => {
+            let path = payload
+                .as_str()
+                .or_else(|| payload.get("path").and_then(Value::as_str))
+                .ok_or_else(|| js_error("DELETE requires a path"))?;
+            delete_path(state, path);
+            Ok(())
+        }
+        "BATCH" => {
+            let updates = payload
+                .as_array()
+                .ok_or_else(|| js_error("BATCH requires an array payload"))?;
+            for update in updates {
+                let nested_action_type = update
+                    .get("actionType")
+                    .or_else(|| update.get("type"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("UPDATE");
+                let nested_payload = update.get("payload").cloned().unwrap_or_else(|| update.clone());
+                apply_action_mut(state, nested_action_type, nested_payload)?;
+            }
+            Ok(())
+        }
+        _ => Ok(()),
     }
 }
 
@@ -822,6 +868,43 @@ mod tests {
         let current = json!({ "user": { "name": "A", "age": 7 } });
         let next = apply_action(&current, "DELETE", json!("user.age")).unwrap();
         assert!(next["user"].get("age").is_none());
+    }
+
+    #[test]
+    fn batch_applies_updates_in_place_after_one_clone() {
+        let current = json!({
+            "user": { "name": "A", "age": 7 },
+            "count": 1
+        });
+        let next = apply_action(&current, "BATCH", json!([
+            { "actionType": "UPDATE", "payload": { "path": "user.name", "value": "B" } },
+            { "actionType": "DELETE", "payload": { "path": "user.age" } },
+            { "actionType": "MERGE", "payload": { "count": 2 } }
+        ])).unwrap();
+
+        assert_eq!(next["user"]["name"], "B");
+        assert!(next["user"].get("age").is_none());
+        assert_eq!(next["count"], 2);
+        assert_eq!(current["user"]["name"], "A");
+    }
+
+    #[test]
+    fn nested_batch_is_applied_without_restarting_state() {
+        let current = json!({ "count": 0, "user": { "name": "A" } });
+        let next = apply_action(&current, "BATCH", json!([
+            { "actionType": "UPDATE", "payload": { "path": "count", "value": 1 } },
+            {
+                "actionType": "BATCH",
+                "payload": [
+                    { "actionType": "UPDATE", "payload": { "path": "user.name", "value": "B" } },
+                    { "actionType": "UPDATE", "payload": { "path": "user.active", "value": true } }
+                ]
+            }
+        ])).unwrap();
+
+        assert_eq!(next["count"], 1);
+        assert_eq!(next["user"]["name"], "B");
+        assert_eq!(next["user"]["active"], true);
     }
 
     #[test]

@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@gaesup-state/core": "workspace:^",
+    "gaesup-state": "workspace:^",
     "@gaesup-state/react": "workspace:^",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"

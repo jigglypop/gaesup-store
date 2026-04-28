@@ -1,4 +1,4 @@
-import { GaesupCore } from '@gaesup-state/core';
+import { GaesupCore } from 'gaesup-state';
 
 // 벤치마크 유틸리티
 class Benchmark {

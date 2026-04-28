@@ -1,5 +1,5 @@
 import { ref, computed, onMounted, onUnmounted, watch, type Ref, type ComputedRef } from 'vue'
-import type { ContainerInstance, ContainerConfig } from '@gaesup-state/core'
+import type { ContainerInstance, ContainerConfig } from 'gaesup-state'
 import { useContainerManager } from './useContainerManager'
 import type { UseContainerStateOptions, UseContainerStateReturn } from '../types'
 

@@ -1,4 +1,4 @@
-import type { ContainerConfig, ValidationResult } from '@gaesup-state/core'
+import type { ContainerConfig, ValidationResult } from 'gaesup-state'
 
 export function createContainer(
   name: string, 

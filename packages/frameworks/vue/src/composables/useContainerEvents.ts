@@ -1,5 +1,5 @@
 import { onUnmounted, ref } from 'vue'
-import type { ContainerEvent } from '@gaesup-state/core'
+import type { ContainerEvent } from 'gaesup-state'
 import { useContainerManager } from './useContainerManager'
 
 export function useContainerEvents(eventType = '*', bufferSize = 100) {

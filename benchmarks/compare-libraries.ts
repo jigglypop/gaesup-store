@@ -1,4 +1,4 @@
-import { GaesupCore } from '@gaesup-state/core';
+import { GaesupCore } from 'gaesup-state';
 import { createStore as createReduxStore, combineReducers } from 'redux';
 import { configureStore, createSlice } from '@reduxjs/toolkit';
 import { create } from 'zustand';

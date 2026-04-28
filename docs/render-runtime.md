@@ -14,7 +14,7 @@ Render runtime의 목표는 다음입니다.
 ## 기본 흐름
 
 ```typescript
-import { GaesupRender, GaesupRenderBridge } from '@gaesup-state/core';
+import { GaesupRender, GaesupRenderBridge } from 'gaesup-state';
 
 await GaesupRender.createStore('scene', 'home');
 

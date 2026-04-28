@@ -1,19 +1,19 @@
 {
-  "name": "gaesup-state",
-  "version": "2.0.0",
+  "name": "gaesup-state-workspace",
+  "version": "0.0.1",
   "description": "High-performance cross-framework state management with WASM",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "concurrently -n \"WASM,CORE,REACT,VUE,SVELTE,DEMO\" -c \"red,blue,cyan,green,yellow,magenta\" \"pnpm dev:wasm\" \"pnpm dev:core\" \"pnpm dev:react\" \"pnpm dev:vue\" \"pnpm dev:svelte\" \"pnpm dev:demo\"",
-    "dev:wasm": "pnpm --filter @gaesup-state/core-rust run build",
+    "dev:wasm": "pnpm --filter gaesup-state-core-rust run build",
     "dev:core": "cd packages/core && pnpm dev",
     "dev:react": "cd packages/frameworks/react && pnpm dev",
     "dev:vue": "cd packages/frameworks/vue && pnpm dev",
     "dev:svelte": "cd packages/frameworks/svelte && pnpm dev",
     "dev:demo": "wait-on packages/core-rust/pkg-web/gaesup_state_core.js && cd examples/multi-framework-demo && pnpm dev",
     "build": "pnpm run build:wasm && pnpm run build:packages && pnpm run build:examples",
-    "build:wasm": "pnpm --filter @gaesup-state/core-rust run build",
+    "build:wasm": "pnpm --filter gaesup-state-core-rust run build",
     "build:packages": "pnpm -r --filter './packages/**' run build",
     "build:examples": "pnpm -r --filter './examples/**' run build",
     "test": "pnpm run test:rust && pnpm run test:packages && pnpm run test:integration",
@@ -25,6 +25,8 @@
     "bench": "pnpm run build && node benchmarks/run-all.js",
     "bench:compare": "node benchmarks/compare-state-libraries.mjs",
     "bench:bottleneck": "node benchmarks/gaesup-bottleneck-probe.mjs",
+    "npm:check": "pnpm --filter gaesup-state run test && pnpm --filter gaesup-state run type-check && pnpm --filter gaesup-state run build && pnpm --filter gaesup-state run pack:dry && pnpm --filter gaesup-state-core-rust run pack:dry",
+    "npm:smoke": "node scripts/npm-smoke.cjs",
     "demo": "cd examples/multi-framework-demo && pnpm dev",
     "clean": "pnpm -r exec rm -rf dist node_modules .turbo && rm -rf packages/core-rust/pkg* packages/core-rust/target",
     "lint": "pnpm -r run lint",
@@ -65,7 +67,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/gaesup/gaesup-state"
+    "url": "git+https://github.com/gaesup/gaesup-state.git"
   },
   "license": "MIT",
   "dependencies": {
@@ -75,4 +77,4 @@
     "redux": "^5.0.1",
     "zustand": "^5.0.6"
   }
-}
+} 

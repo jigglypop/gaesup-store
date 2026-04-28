@@ -18,6 +18,7 @@ pkg/
 wasm-pack.log
 
 # Development
+.codex-run/
 .env
 .env.local
 .env.development.local

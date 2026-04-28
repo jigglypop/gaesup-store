@@ -97,7 +97,7 @@ for dir in pkg pkg-web pkg-node; do
         node -e "
         const fs = require('fs');
         const pkg = JSON.parse(fs.readFileSync('$dir/package.json', 'utf8'));
-        pkg.name = '@gaesup-state/core-rust';
+        pkg.name = 'gaesup-state-core-rust';
         pkg.types = 'index.d.ts';
         if ('$dir' === 'pkg-node') {
             pkg.main = 'gaesup_state_core.js';
@@ -118,6 +118,6 @@ echo ""
 echo -e "${GREEN}✅ WASM 빌드 완료!${NC}"
 echo ""
 echo "사용 방법:"
-echo "  Web:     import init from '@gaesup-state/core-rust/pkg-web'"
-echo "  Node:    const wasm = require('@gaesup-state/core-rust/pkg-node')"
-echo "  Bundler: import * as wasm from '@gaesup-state/core-rust'" 
+echo "  Web:     import init from 'gaesup-state-core-rust/web'"
+echo "  Node:    const wasm = require('gaesup-state-core-rust/node')"
+echo "  Bundler: import * as wasm from 'gaesup-state-core-rust'" 

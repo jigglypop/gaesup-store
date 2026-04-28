@@ -9,7 +9,7 @@ import type {
   ContainerMetadata,
   ContainerError,
   ContainerManager
-} from '@gaesup-state/core'
+} from 'gaesup-state'
 
 // useContainerState 훅 타입들
 export interface UseContainerStateOptions<T> {

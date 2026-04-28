@@ -1,5 +1,5 @@
 import type { Ref } from 'vue'
-import type { ContainerConfig, ContainerInstance } from '@gaesup-state/core'
+import type { ContainerConfig, ContainerInstance } from 'gaesup-state'
 
 export interface UseContainerStateOptions<T> {
   initialState?: T

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react'
-import { ContainerManager, type ContainerManagerConfig } from '@gaesup-state/core'
+import { ContainerManager, type ContainerManagerConfig } from 'gaesup-state'
 import type { ContainerContextValue } from '../types'
 
 const ContainerContext = createContext<ContainerContextValue | null>(null)

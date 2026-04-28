@@ -2,7 +2,7 @@ import {
   CompatibilityGuard,
   type ContainerPackageManifest,
   type HostCompatibilityConfig
-} from '@gaesup-state/core';
+} from 'gaesup-state';
 
 type Scenario = {
   title: string;

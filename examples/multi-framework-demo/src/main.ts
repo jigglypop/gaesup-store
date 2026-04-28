@@ -12,7 +12,7 @@ import { mountDependencyIsolationDemo } from './dependencyIsolationDemo';
 import { mountReactHeader } from './components/react/ReactHeader';
 import { mountSvelteMain } from './components/svelte/mountSvelte';
 import { mountVueFooter } from './components/vue/mountVue';
-import { GaesupCore } from '@gaesup-state/core';
+import { GaesupCore } from 'gaesup-state';
 
 (window as any).GaesupCore = GaesupCore;
 

@@ -8,7 +8,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': resolve(__dirname, './src'),
-      '@gaesup-state/core': resolve(__dirname, '../../packages/core/src'),
+      'gaesup-state': resolve(__dirname, '../../packages/core/src'),
       '@gaesup-state/react': resolve(__dirname, '../../packages/frameworks/react/src')
     }
   },
@@ -33,7 +33,7 @@ export default defineConfig({
       output: {
         manualChunks: {
           react: ['react', 'react-dom'],
-          gaesup: ['@gaesup-state/core', '@gaesup-state/react']
+          gaesup: ['gaesup-state', '@gaesup-state/react']
         }
       }
     }
@@ -41,7 +41,7 @@ export default defineConfig({
 
   optimizeDeps: {
     include: ['react', 'react-dom'],
-    exclude: ['@gaesup-state/core', '@gaesup-state/react']
+    exclude: ['gaesup-state', '@gaesup-state/react']
   },
 
   // WASM 지원

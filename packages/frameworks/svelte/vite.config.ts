@@ -10,7 +10,7 @@ export default defineConfig({
       formats: ['es', 'cjs']
     },
     rollupOptions: {
-      external: ['@gaesup-state/core', '@gaesup-state/adapter', 'svelte', 'svelte/store']
+      external: ['gaesup-state', '@gaesup-state/adapter', 'svelte', 'svelte/store']
     },
     sourcemap: true,
     target: 'es2020'

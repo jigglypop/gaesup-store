@@ -1,5 +1,5 @@
 import { onUnmounted, ref } from 'vue'
-import type { ContainerMetrics } from '@gaesup-state/core'
+import type { ContainerMetrics } from 'gaesup-state'
 import { useContainerManager } from './useContainerManager'
 
 export function useContainerMetrics(refreshInterval = 1000) {

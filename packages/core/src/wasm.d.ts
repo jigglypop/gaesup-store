@@ -1,1 +1,1 @@
-declare module '../../core-rust/pkg-web/gaesup_state_core.js';
+declare module 'gaesup-state-core-rust/web';

@@ -1,5 +1,7 @@
 # 성능 메모
 
+![Gaesup-State performance comparison](./assets/performance-comparison.svg)
+
 이 문서는 현재 Gaesup-State의 성능 방향과 최근 측정값을 정리합니다. 숫자는 실행 환경, 브라우저, dev server 상태, CPU/GPU 상태에 따라 달라질 수 있습니다. 중요한 것은 절대값보다 병목이 어디로 이동했는지입니다.
 
 ## 결론
@@ -250,3 +252,42 @@ useFrame(async (_, delta) => {
 - 큰 데이터에서는 JSON과 객체 생성 비용이 병목이 되기 쉽습니다.
 
 성능 판단은 같은 작업을 같은 조건에서 여러 번 측정해야 합니다. 지금 코드의 방향은 Rust 계산을 빠르게 만드는 것보다, 프레임마다 넘어가는 데이터의 양과 형태를 통제하는 쪽에 더 가깝습니다.
+## Dispatch pipeline이 줄이는 비용
+
+pipeline은 같은 store에 들어가는 여러 action을 한 번의 flush로 묶습니다.
+
+```typescript
+const pipe = GaesupCore.pipeline('editor', { autoFlush: false });
+
+pipe.update('document.title', 'New title');
+pipe.update('selection.active', true);
+pipe.delete('draft.error');
+
+await pipe.flush();
+```
+
+이 경로가 줄이는 비용은 다음과 같습니다.
+
+- JS에서 `dispatch`를 여러 번 호출하지 않습니다.
+- Rust/WASM 경계를 한 번만 넘습니다.
+- 같은 path를 반복 갱신하면 마지막 mutation만 남깁니다.
+- Rust core의 `BATCH`는 state를 한 번 clone한 뒤 내부 mutation을 in-place로 적용합니다.
+- subscriber는 최종 state 기준으로 한 번만 깨울 수 있습니다.
+
+pipeline은 단일 update를 더 빠르게 만드는 기술이 아닙니다. 여러 update가 같은 tick이나 같은 command 안에서 같이 발생할 때 전체 비용을 줄이는 기술입니다.
+
+좋은 적용 대상:
+
+- editor command
+- drag update
+- form submit 후 여러 field 갱신
+- API 응답을 여러 state field에 반영
+- undo/redo 적용
+
+적합하지 않은 대상:
+
+- 숫자 하나만 초고빈도로 증가시키는 counter
+- 매 프레임 matrix를 수천 개 갱신하는 render loop
+- 서로 다른 store를 원자적으로 묶어야 하는 transaction
+
+숫자 하나의 초고빈도 갱신은 counter handle fast path가 더 낫고, 3D transform은 render runtime의 dirty matrix buffer가 더 낫습니다.

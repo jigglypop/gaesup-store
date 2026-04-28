@@ -10,7 +10,7 @@ export default defineConfig({
       formats: ['es', 'cjs']
     },
     rollupOptions: {
-      external: ['@gaesup-state/core', '@gaesup-state/adapter', 'vue']
+      external: ['gaesup-state', '@gaesup-state/adapter', 'vue']
     },
     sourcemap: true,
     target: 'es2020'

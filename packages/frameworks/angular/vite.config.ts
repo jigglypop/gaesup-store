@@ -10,7 +10,7 @@ export default defineConfig({
       formats: ['es', 'cjs']
     },
     rollupOptions: {
-      external: ['@gaesup-state/core', '@gaesup-state/adapter', '@angular/core', '@angular/common', 'rxjs']
+      external: ['gaesup-state', '@gaesup-state/adapter', '@angular/core', '@angular/common', 'rxjs']
     },
     sourcemap: true,
     target: 'es2020'

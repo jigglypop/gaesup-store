@@ -1,5 +1,5 @@
 // Gaesup-State를 사용한 공유 스토어
-import { GaesupCore } from '@gaesup-state/core';
+import { GaesupCore } from 'gaesup-state';
 
 // 공유 상태 타입 정의
 export interface SharedState {

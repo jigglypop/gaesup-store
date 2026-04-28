@@ -72,7 +72,7 @@ export default defineConfig({
           'angular-vendor': ['@angular/core', '@angular/platform-browser'],
           // Gaesup-State 코어
           'gaesup-core': [
-            '@gaesup-state/core',
+            'gaesup-state',
             '@gaesup-state/adapter'
           ],
           // 프레임워크 통합
@@ -98,7 +98,7 @@ export default defineConfig({
       '@shared': resolve(__dirname, 'src/shared'),
       '@utils': resolve(__dirname, 'src/utils'),
       // 워크스페이스 패키지 별칭
-      '@gaesup-state/core': resolve(__dirname, '../../packages/core/src'),
+      'gaesup-state': resolve(__dirname, '../../packages/core/src'),
       '@gaesup-state/adapter': resolve(__dirname, '../../packages/adapter/src'),
       '@gaesup-state/react': resolve(__dirname, '../../packages/frameworks/react/src'),
       '@gaesup-state/vue': resolve(__dirname, '../../packages/frameworks/vue/src'),

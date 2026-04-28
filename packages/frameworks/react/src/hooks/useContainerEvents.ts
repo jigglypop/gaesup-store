@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { ContainerEvent } from '@gaesup-state/core'
+import type { ContainerEvent } from 'gaesup-state'
 import type { UseContainerEventsOptions } from '../types'
 import { useContainerContext } from '../context/ContainerContext'
 

@@ -1,5 +1,5 @@
 import { writable, derived, get, type Writable, type Readable } from 'svelte/store'
-import type { ContainerInstance, ContainerConfig } from '@gaesup-state/core'
+import type { ContainerInstance, ContainerConfig } from 'gaesup-state'
 import { getContainerManagerStore } from './managerStore'
 import type { ContainerStore, ContainerStoreOptions } from '../types'
 

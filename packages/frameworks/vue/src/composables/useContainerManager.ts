@@ -1,5 +1,5 @@
 import { shallowRef } from 'vue'
-import { ContainerManager, type ContainerManagerConfig } from '@gaesup-state/core'
+import { ContainerManager, type ContainerManagerConfig } from 'gaesup-state'
 
 const managerRef = shallowRef<ContainerManager | null>(null)
 
