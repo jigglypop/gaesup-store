@@ -324,6 +324,10 @@ export const GaesupRender = {
     await ensureReady();
     return (wasm as any).tick_render_frame(storeId, deltaMs);
   },
+  async tickFrameState(storeId: string, deltaMs: number) {
+    await ensureReady();
+    return (wasm as any).tick_render_frame_state(storeId, deltaMs);
+  },
   getPatches(storeId: string) {
     requireReady();
     return (wasm as any).get_render_patches(storeId);
@@ -365,6 +369,7 @@ export interface GaesupRenderBridgeOptions {
   gpuDevice?: any;
   matrixBuffer?: any;
   matrixStrideBytes?: number;
+  patchMode?: 'typed' | 'json';
 }
 
 export interface GaesupInstancedWriter {
@@ -410,7 +415,7 @@ export class GaesupRenderBridge {
     const buffer = GaesupRender.getDirtyMatrixBuffer(this.options.storeId);
     this.instancedWriter?.writeDirtyMatrices?.(buffer.instanceIndices, buffer.matrices);
 
-    if (this.instancedWriter?.setMatrixAt) {
+    if (!this.instancedWriter?.writeDirtyMatrices && this.instancedWriter?.setMatrixAt) {
       for (let i = 0; i < buffer.count; i++) {
         const matrix = Array.from(buffer.matrices.subarray(i * 16, i * 16 + 16));
         this.instancedWriter.setMatrixAt(buffer.instanceIndices[i], matrix);
@@ -435,9 +440,15 @@ export class GaesupRenderBridge {
   }
 
   async tick(deltaMs: number) {
-    const patches = await GaesupRender.tickFrame(this.options.storeId, deltaMs);
-    this.applyPatches(patches);
-    return patches;
+    const frame = this.options.patchMode === 'json'
+      ? await GaesupRender.tickFrame(this.options.storeId, deltaMs)
+      : await GaesupRender.tickFrameState(this.options.storeId, deltaMs);
+    if (this.options.patchMode === 'json') {
+      this.applyPatches(frame);
+      return frame;
+    }
+    const dirty = this.syncDirtyMatrixBuffer();
+    return { frame, dirty };
   }
 
   applyPatches(patches: any) {

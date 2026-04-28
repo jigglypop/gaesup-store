@@ -237,6 +237,32 @@ impl RenderStore {
         })
     }
 
+    fn frame_state(&self) -> Value {
+        let transition_progress = self.transition.as_ref().map(|transition| {
+            if transition.duration_ms <= 0.0 {
+                1.0
+            } else {
+                (transition.elapsed_ms / transition.duration_ms).clamp(0.0, 1.0)
+            }
+        });
+
+        serde_json::json!({
+            "storeId": self.id,
+            "frame": self.frame,
+            "timeMs": self.time_ms,
+            "activeScreen": self.active_screen,
+            "nextScreen": self.next_screen,
+            "screenTransition": self.transition,
+            "screenTransitionProgress": transition_progress,
+            "dirty": {
+                "frame": self.dirty.frame,
+                "screens": self.dirty.screens,
+                "transformCount": self.dirty.transforms.len(),
+                "materialCount": self.dirty.materials.len(),
+            }
+        })
+    }
+
     fn dirty_matrix_buffer(&mut self) -> MatrixBufferPayload {
         let transform_ids: Vec<String> = self.dirty.transforms.drain().collect();
         let mut dirty_entities: Vec<&RenderEntity> = transform_ids
@@ -356,6 +382,21 @@ pub fn tick_render_frame(store_id: &str, delta_ms: f64) -> Result<JsValue, JsVal
             .ok_or_else(|| js_error(&format!("Render store not found: {store_id}")))?;
         store.tick(delta_ms);
         to_js(&store.patches())
+    })
+}
+
+#[wasm_bindgen]
+pub fn tick_render_frame_state(store_id: &str, delta_ms: f64) -> Result<JsValue, JsValue> {
+    RENDER_STORES.with(|stores| {
+        let mut stores = stores.borrow_mut();
+        let store = stores
+            .get_mut(store_id)
+            .ok_or_else(|| js_error(&format!("Render store not found: {store_id}")))?;
+        store.tick(delta_ms);
+        let frame = store.frame_state();
+        store.dirty.frame = false;
+        store.dirty.screens = false;
+        to_js(&frame)
     })
 }
 
@@ -653,6 +694,23 @@ mod tests {
         assert_eq!(payload.instance_indices, vec![0, 2]);
         assert_eq!(payload.matrices.len(), 32);
         assert!(store.dirty_matrix_buffer().instance_indices.is_empty());
+    }
+
+    #[test]
+    fn frame_state_does_not_drain_transform_dirty_set() {
+        let mut store = RenderStore::new("scene".to_string(), "home".to_string());
+        store.insert_entity(RenderEntity {
+            id: "cube".to_string(),
+            instance_index: usize::MAX,
+            transform: Transform::default(),
+            material_id: None,
+            mesh_id: None,
+            visible: true,
+        });
+        store.tick(16.0);
+        let frame = store.frame_state();
+        assert_eq!(frame["dirty"]["transformCount"], 1);
+        assert_eq!(store.dirty.transforms.len(), 1);
     }
 
     #[test]
