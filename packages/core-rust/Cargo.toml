@@ -9,7 +9,7 @@ keywords = ["wasm", "webassembly", "container", "state-management", "performance
 categories = ["wasm", "web-programming"]
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 wasm-bindgen = "0.2"

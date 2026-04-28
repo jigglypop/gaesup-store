@@ -1,321 +1,288 @@
-/// <reference path="./wasm-types.d.ts" />
+/// <reference path="./wasm.d.ts" />
 
-import type { Action, RegisteredStoreSchema } from './types';
-import { ContainerManager } from './container/ContainerManager';
+import initWasm, * as wasm from '../../core-rust/pkg-web/gaesup_state_core.js';
 
-// 동적 import로 WASM 모듈 로드
-let wasm: any = null;
-let wasmInitialized = false;
-let initPromise: Promise<void> | null = null;
+export type DependencyConflictPolicy = 'reject' | 'isolate' | 'migrate' | 'readonly';
+export type AcceleratorKind = 'cpu' | 'webgpu' | 'cuda';
 
-// 콜백 저장소
-const callbacks = new Map<string, (state?: any) => void>();
-const dispatchListeners = new Map<string, Set<(action: Action, state: any) => void>>();
-
-// WASM 초기화
-async function ensureWasmInitialized(): Promise<void> {
-  if (wasmInitialized) return;
-
-  if (!initPromise) {
-    initPromise = (async () => {
-      try {
-        const wasmModule = isNodeRuntime()
-          ? await import(/* @vite-ignore */ '@gaesup-state/core-rust/pkg-node/gaesup_state_core.js')
-          : await import('@gaesup-state/core-rust/pkg-web/gaesup_state_core.js');
-        const initWasm = (wasmModule as any).default;
-        if (typeof initWasm === 'function') {
-          await initWasm();
-        }
-        wasm = wasmModule;
-        if (wasm.init) {
-          wasm.init();
-        }
-        wasmInitialized = true;
-        console.log('✅ Gaesup-State WASM Core initialized');
-      } catch (error) {
-        throw new Error(`Failed to load Rust WASM core: ${getErrorMessage(error)}`);
-      }
-    })();
-  }
-
-  await initPromise;
+export interface Action<T = any> {
+  type: string;
+  payload?: T;
 }
 
-// DevTools 연동 (최적화)
+export interface PackageDependencyContract {
+  name: string;
+  version: string;
+  optional?: boolean;
+  source?: 'host' | 'bundled';
+}
+
+export interface StoreDependencyContract {
+  storeId: string;
+  schemaId: string;
+  schemaVersion: string;
+  compatRange?: string;
+  required?: boolean;
+  conflictPolicy?: DependencyConflictPolicy;
+}
+
+export interface AcceleratorDependencyContract {
+  kind: AcceleratorKind;
+  version?: string;
+  optional?: boolean;
+  capabilities?: string[];
+}
+
+export interface HostAcceleratorContract {
+  kind: AcceleratorKind;
+  version?: string;
+  capabilities?: string[];
+}
+
+export interface RegisteredStoreSchema {
+  storeId: string;
+  schemaId: string;
+  schemaVersion: string;
+  compatRange?: string;
+}
+
+export interface HostCompatibilityConfig {
+  hostVersion?: string;
+  abiVersion?: string;
+  defaultConflictPolicy?: DependencyConflictPolicy;
+  dependencies?: PackageDependencyContract[] | Record<string, string>;
+  stores?: RegisteredStoreSchema[];
+  accelerators?: HostAcceleratorContract[];
+}
+
+export interface ContainerPackageManifest {
+  manifestVersion: string;
+  name: string;
+  version: string;
+  runtime?: string;
+  gaesup?: { abiVersion: string; minHostVersion?: string };
+  dependencies?: PackageDependencyContract[];
+  stores?: StoreDependencyContract[];
+  accelerators?: AcceleratorDependencyContract[];
+  allowedImports?: string[];
+  permissions?: Record<string, any>;
+}
+
+export interface ValidationIssue {
+  code: string;
+  message: string;
+  severity: 'error' | 'warning';
+  target?: string;
+}
+
+export interface ValidationResult {
+  valid: boolean;
+  errors: ValidationIssue[];
+  warnings: ValidationIssue[];
+  isolatedStores: string[];
+}
+
+export interface ContainerConfig {
+  id?: string;
+  name: string;
+  runtime?: string;
+  initialState?: any;
+}
+
+export type ContainerEventType = 'container:created' | 'container:started' | 'container:stopped' | 'container:error';
+export type ContainerEvent = Record<string, any> & { type: ContainerEventType };
+export type ContainerManagerConfig = Record<string, any>;
+export type ContainerMetrics = Record<string, any>;
+export type ContainerMetadata = Record<string, any>;
+
+let ready: Promise<void> | null = null;
+const dispatchListeners = new Map<string, Set<(action: Action, state: any) => void>>();
+
+function ensureReady() {
+  ready ||= Promise.resolve(initWasm()).then(() => {
+    wasm.init?.();
+  });
+  return ready;
+}
+
+function requireReady() {
+  if (!ready) {
+    throw new Error('Rust WASM core is not initialized yet');
+  }
+}
+
 export const GaesupCore = {
-  async initStore(initialState: any = {}): Promise<void> {
+  async initStore(initialState: any = {}) {
     return this.createStore('main', initialState);
   },
-
-  async createStore(storeId: string, initialState: any = {}, options: { schema?: RegisteredStoreSchema } = {}): Promise<void> {
-    await ensureWasmInitialized();
+  async createStore(storeId: string, initialState: any = {}, options: { schema?: RegisteredStoreSchema } = {}) {
+    await ensureReady();
     await wasm.create_store(storeId, initialState);
-    if (options.schema) {
-      await wasm.register_store_schema?.(options.schema);
-    }
+    if (options.schema) await wasm.register_store_schema(options.schema);
   },
-
-  async cleanupStore(storeId: string): Promise<void> {
-    await ensureWasmInitialized();
+  async cleanupStore(storeId: string) {
+    await ensureReady();
     wasm.cleanup_store(storeId);
     dispatchListeners.delete(storeId);
   },
-
-  async garbageCollect(): Promise<void> {
-    callbacks.clear();
-    dispatchListeners.clear();
-    await ensureWasmInitialized();
+  async garbageCollect() {
+    await ensureReady();
     wasm.garbage_collect();
+    wasm.cleanup_containers();
+    dispatchListeners.clear();
   },
-
-  async dispatch(storeIdOrActionType: string, actionTypeOrPayload?: any, payload?: any): Promise<any> {
-    await ensureWasmInitialized();
-    const isLegacyCall = payload === undefined && typeof actionTypeOrPayload !== 'string';
-    const storeId = isLegacyCall ? 'main' : storeIdOrActionType;
-    const actionType = isLegacyCall ? storeIdOrActionType : actionTypeOrPayload;
-    const actionPayload = isLegacyCall ? actionTypeOrPayload : payload;
-
-    try {
-      const nextState = await wasm.dispatch(storeId, actionType, actionPayload);
-      dispatchListeners.get(storeId)?.forEach((listener) => listener({ type: actionType, payload: actionPayload }, nextState));
-      return nextState;
-    } catch (error) {
-      throw new Error(`Failed to dispatch '${actionType}': ${getErrorMessage(error)}`);
-    }
-  },
-
-  select(storeIdOrPath: string = 'main', maybePath?: string): any {
-    if (!wasmInitialized) {
-      throw new Error('Store not initialized');
-    }
-    const storeId = maybePath === undefined ? 'main' : storeIdOrPath;
-    const path = maybePath === undefined ? storeIdOrPath : maybePath;
-    const selected = wasm.select(storeId, path || '');
-    if (selected === undefined && path) {
-      throw new Error(`State path not found: ${path}`);
-    }
-    return selected;
-  },
-
-  subscribe(storeIdOrCallback: string | ((state: any) => void), path?: string, callbackId?: string): string | (() => void) {
-    if (!wasmInitialized) {
-      throw new Error('Store not initialized');
-    }
-    if (typeof storeIdOrCallback === 'function') {
-      const callbackKey = `legacy_${Math.random().toString(36).slice(2)}`;
-      callbacks.set(callbackKey, storeIdOrCallback);
-      const subscriptionId = this.subscribe('main', '', callbackKey) as string;
-      return () => this.unsubscribe(subscriptionId);
-    }
-    const callback = callbackId ? callbacks.get(callbackId) : undefined;
-    if (!callback) {
-      throw new Error(`Callback not registered: ${callbackId}`);
-    }
-    return wasm.subscribe(storeIdOrCallback, path || '', callback);
-  },
-
-  unsubscribe(subscriptionId: string): void {
-    if (wasmInitialized) {
-      wasm.unsubscribe(subscriptionId);
-    }
-  },
-
-  registerCallback(callbackId: string, callback: (state?: any) => void): void {
-    callbacks.set(callbackId, callback);
-  },
-
-  unregisterCallback(callbackId: string): void {
-    callbacks.delete(callbackId);
-  },
-
-  async createSnapshot(storeId: string = 'main'): Promise<string> {
-    await ensureWasmInitialized();
-    return wasm.create_snapshot(storeId);
-  },
-
-  async restoreSnapshot(storeIdOrSnapshotId: string, maybeSnapshotId?: string): Promise<any> {
-    await ensureWasmInitialized();
-    const storeId = maybeSnapshotId === undefined ? 'main' : storeIdOrSnapshotId;
-    const snapshotId = maybeSnapshotId === undefined ? storeIdOrSnapshotId : maybeSnapshotId;
-    const state = await wasm.restore_snapshot(storeId, snapshotId);
-    dispatchListeners.get(storeId)?.forEach((listener) => listener({ type: 'RESTORE_SNAPSHOT', payload: snapshotId }, state));
+  async dispatch(storeIdOrActionType: string, actionTypeOrPayload?: any, payload?: any) {
+    await ensureReady();
+    const legacy = payload === undefined && typeof actionTypeOrPayload !== 'string';
+    const storeId = legacy ? 'main' : storeIdOrActionType;
+    const actionType = legacy ? storeIdOrActionType : actionTypeOrPayload;
+    const actionPayload = legacy ? actionTypeOrPayload : payload;
+    const state = await wasm.dispatch(storeId, actionType, actionPayload);
+    dispatchListeners.get(storeId)?.forEach((listener) => listener({ type: actionType, payload: actionPayload }, state));
     return state;
   },
-
-  getMetrics(storeId: string = 'main'): any {
-    if (!wasmInitialized) {
-      return {
-        subscriber_count: 0,
-        snapshot_count: 0,
-        timestamp: new Date().toISOString(),
-      };
-    }
+  async dispatchCounter(storeId: string, delta: number, framework: string, actionName: string) {
+    await ensureReady();
+    const state = await (wasm as any).dispatch_counter(storeId, delta, framework, actionName);
+    dispatchListeners.get(storeId)?.forEach((listener) => listener({ type: actionName, payload: { delta, framework } }, state));
+    return state;
+  },
+  async dispatchCounterBatch(storeId: string, delta: number, count: number, framework: string, actionName: string) {
+    await ensureReady();
+    const state = await (wasm as any).dispatch_counter_batch(storeId, delta, count, framework, actionName);
+    dispatchListeners.get(storeId)?.forEach((listener) => listener({ type: `${actionName}_BATCH`, payload: { delta, count, framework } }, state));
+    return state;
+  },
+  select(storeIdOrPath = 'main', maybePath?: string) {
+    requireReady();
+    const storeId = maybePath === undefined ? 'main' : storeIdOrPath;
+    const path = maybePath === undefined ? storeIdOrPath : maybePath;
+    return wasm.select(storeId, path || '');
+  },
+  subscribe(storeId: string, path: string, callbackOrId: string | ((state: any) => void)) {
+    requireReady();
+    const callback = typeof callbackOrId === 'function' ? callbackOrId : callbackRegistry.get(callbackOrId);
+    if (!callback) throw new Error(`Callback not registered: ${callbackOrId}`);
+    return wasm.subscribe(storeId, path || '', callback);
+  },
+  unsubscribe(subscriptionId: string) {
+    wasm.unsubscribe(subscriptionId);
+  },
+  registerCallback(callbackId: string, callback: (state?: any) => void) {
+    callbackRegistry.set(callbackId, callback);
+  },
+  unregisterCallback(callbackId: string) {
+    callbackRegistry.delete(callbackId);
+  },
+  async createSnapshot(storeId = 'main') {
+    await ensureReady();
+    return wasm.create_snapshot(storeId);
+  },
+  async restoreSnapshot(storeIdOrSnapshotId: string, maybeSnapshotId?: string) {
+    await ensureReady();
+    const storeId = maybeSnapshotId === undefined ? 'main' : storeIdOrSnapshotId;
+    const snapshotId = maybeSnapshotId === undefined ? storeIdOrSnapshotId : maybeSnapshotId;
+    return wasm.restore_snapshot(storeId, snapshotId);
+  },
+  async getMetrics(storeId = 'main') {
+    await ensureReady();
     return wasm.get_metrics(storeId);
   },
-
-  cleanup(): void {
-    if (wasmInitialized) {
-      try {
-        wasm.cleanup();
-      } catch (error) {
-        console.error('Failed to cleanup:', error);
-      }
-    }
+  registerStoreSchema(schema: RegisteredStoreSchema) {
+    requireReady();
+    return wasm.register_store_schema(schema);
   },
-
+  getStoreSchemas() {
+    requireReady();
+    return wasm.get_store_schemas();
+  },
   createBatchUpdate(storeId: string) {
-    const updates: Array<{ actionType: string; payload: any }> = [];
+    const batch = new wasm.BatchUpdate(storeId);
     return {
-      addUpdate(actionType: string, payload: any): void {
-        updates.push({ actionType, payload });
-      },
-      add(actionType: string, payload: any): void {
-        updates.push({ actionType, payload });
-      },
-      async execute(): Promise<any> {
-        return GaesupCore.dispatch(storeId, 'BATCH', updates);
-      }
+      addUpdate: (actionType: string, payload: any) => batch.add_update(actionType, payload),
+      add: (actionType: string, payload: any) => batch.add_update(actionType, payload),
+      execute: () => batch.execute()
     };
   },
-
-  registerReducer(storeId: string, reducer: (state: any, action: Action) => any): void {
-    throw new Error(`registerReducer is not supported by the Rust WASM core yet: ${storeId}`);
-  },
-
-  onDispatch(storeId: string, listener: (action: Action, state: any) => void): () => void {
-    const listeners = dispatchListeners.get(storeId) || new Set<(action: Action, state: any) => void>();
+  onDispatch(storeId: string, listener: (action: Action, state: any) => void) {
+    const listeners = dispatchListeners.get(storeId) || new Set();
     listeners.add(listener);
     dispatchListeners.set(storeId, listeners);
     return () => listeners.delete(listener);
   },
-
-  registerStoreSchema(schema: RegisteredStoreSchema): void {
-    if (!wasmInitialized) {
-      throw new Error('Store not initialized');
-    }
-    wasm.register_store_schema(schema);
-  },
-
-  getStoreSchemas(): RegisteredStoreSchema[] {
-    if (!wasmInitialized) {
-      return [];
-    }
-    return wasm.get_store_schemas();
-  },
-
-  persist_store(storeId: string, storageKey: string): void {
-    if (typeof localStorage === 'undefined') {
-      throw new Error('localStorage is not available');
-    }
-    localStorage.setItem(storageKey, JSON.stringify(this.select(storeId, '')));
-  },
-
-  hydrate_store(storeId: string, storageKey: string): void {
-    if (typeof localStorage === 'undefined') {
-      throw new Error('localStorage is not available');
-    }
-    const raw = localStorage.getItem(storageKey);
-    if (!raw) {
-      throw new Error(`No persisted state found: ${storageKey}`);
-    }
-    wasm.dispatch(storeId, 'SET', JSON.parse(raw));
-  },
-
-  set(newState: any): Promise<any> {
-    return this.dispatch('main', 'SET', newState);
-  },
-
-  merge(partialState: any): Promise<any> {
-    return this.dispatch('main', 'MERGE', partialState);
-  },
-
-  update(path: string, value: any): Promise<any> {
-    return this.dispatch('main', 'UPDATE', { path, value });
-  },
-
-  batch(updates: Array<{ path: string; value: any }>): Promise<any> {
-    return this.dispatch('main', 'BATCH', updates.map((update) => ({
-      actionType: 'UPDATE',
-      payload: update
-    })));
+  registerReducer() {
+    throw new Error('Reducers must be compiled into the Rust WASM core path');
   }
 };
 
-if (typeof window !== 'undefined' && (window as any).__REDUX_DEVTOOLS_EXTENSION__) {
-  const devTools = (window as any).__REDUX_DEVTOOLS_EXTENSION__.connect({
-    name: 'Gaesup-State',
-    features: {
-      pause: true,
-      lock: true,
-      persist: true,
-      export: true,
-      import: 'custom',
-      jump: true,
-      skip: false,
-      reorder: false,
-      dispatch: true,
-      test: false
-    }
-  });
-  
-  // DevTools에 액션 전송
-  const originalDispatch = GaesupCore.dispatch;
-  GaesupCore.dispatch = async function(storeIdOrActionType: string, actionTypeOrPayload?: any, payload?: any) {
-    const result = await originalDispatch.call(this, storeIdOrActionType, actionTypeOrPayload, payload);
-    const isLegacyCall = payload === undefined && typeof actionTypeOrPayload !== 'string';
-    const storeId = isLegacyCall ? 'main' : storeIdOrActionType;
-    const actionType = isLegacyCall ? storeIdOrActionType : actionTypeOrPayload;
-    const actionPayload = isLegacyCall ? actionTypeOrPayload : payload;
-    
-    devTools.send({
-      type: actionType,
-      payload: actionPayload,
-      storeId
-    }, GaesupCore.select(storeId, ''));
-    
-    return result;
-  };
+const callbackRegistry = new Map<string, (state?: any) => void>();
+
+export class CompatibilityGuard {
+  constructor(private readonly host: HostCompatibilityConfig = {}) {}
+  validate(manifest: ContainerPackageManifest): ValidationResult {
+    requireReady();
+    return wasm.validate_manifest(manifest, this.host);
+  }
+  static validate(manifest: ContainerPackageManifest, host: HostCompatibilityConfig = {}) {
+    requireReady();
+    return wasm.validate_manifest(manifest, host) as ValidationResult;
+  }
 }
 
-function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+export class ContainerInstance {
+  constructor(private readonly id: string) {}
+  getId() { return this.id; }
+  getStatus() { return this.getMetrics().status; }
+  async call(functionName: string, args?: any) { await ensureReady(); return wasm.call_container(this.id, functionName, args); }
+  getState() { requireReady(); return wasm.get_container_state(this.id); }
+  getMetrics() { requireReady(); return wasm.get_container_metrics(this.id); }
+  async stop() { await ensureReady(); return wasm.stop_container(this.id); }
 }
 
-function isNodeRuntime(): boolean {
-  return typeof process !== 'undefined' && Boolean(process.versions?.node) && typeof window === 'undefined';
+export class ContainerManager {
+  private listeners = new Map<ContainerEventType, Set<(event: ContainerEvent) => void>>();
+  constructor(readonly config: ContainerManagerConfig = {}) {}
+  async createContainer(config: ContainerConfig) {
+    await ensureReady();
+    const created = wasm.create_container(config);
+    const instance = new ContainerInstance(created.id);
+    this.emit('container:created', { type: 'container:created', id: created.id, containerId: created.id });
+    return instance;
+  }
+  async run(name: string) {
+    const container = await this.createContainer({ name });
+    return container.getId();
+  }
+  getContainer(id: string) { return new ContainerInstance(id); }
+  listContainers() { requireReady(); return wasm.list_containers() as ContainerMetadata[]; }
+  async cleanup() { await ensureReady(); wasm.cleanup_containers(); }
+  on(type: ContainerEventType, listener: (event: ContainerEvent) => void) {
+    const listeners = this.listeners.get(type) || new Set();
+    listeners.add(listener);
+    this.listeners.set(type, listeners);
+    return () => listeners.delete(listener);
+  }
+  private emit(type: ContainerEventType, event: ContainerEvent) {
+    this.listeners.get(type)?.forEach((listener) => listener(event));
+  }
 }
 
-// Type exports
-export type { Action, StateListener } from './types'; 
-export type {
-  ContainerConfig,
-  ContainerEvent,
-  ContainerEventType,
-  ContainerManagerConfig,
-  ContainerMetadata,
-  ContainerMetrics,
-  ContainerPackageManifest,
-  DependencyConflictPolicy,
-  AcceleratorDependencyContract,
-  AcceleratorKind,
-  HostAcceleratorContract,
-  HostCompatibilityConfig,
-  RegisteredStoreSchema,
-  StoreDependencyContract,
-  ValidationResult
-} from './types';
-export { CompatibilityGuard } from './compat/CompatibilityGuard';
-export { ContainerError } from './errors';
-export { ContainerInstance } from './container/ContainerInstance';
-export { ContainerManager } from './container/ContainerManager';
-export function createStoreAwareContainerManager(
-  config: ConstructorParameters<typeof ContainerManager>[0] = {}
-) {
-  return new ContainerManager({
-    ...config,
-    compatibility: {
-      ...config.compatibility,
-      stores: config.compatibility?.stores || GaesupCore.getStoreSchemas()
-    }
-  });
+export class WASMContainerManager extends ContainerManager {}
+
+export async function createOptimalContainerManager(config: ContainerManagerConfig = {}) {
+  await ensureReady();
+  return new WASMContainerManager(config);
 }
+
+export class ReduxDevToolsBridge {
+  containerCreated() {}
+  functionCalled() {}
+  errorOccurred() {}
+}
+
+export function getDevToolsBridge() {
+  return new ReduxDevToolsBridge();
+}
+
+export type StateListener<T = any> = (state: T) => void;
+export { ensureReady as initGaesupCore };

@@ -51,53 +51,18 @@ export const ActionTypes = {
 
 // 헬퍼 함수들
 export async function incrementCount(framework: string): Promise<number> {
-  const currentState = GaesupCore.select(SHARED_STORE_ID, '') as SharedState;
-  const previousValue = currentState.count;
-  const newValue = previousValue + 1;
-  
-  // 히스토리 추가
-  const historyEntry = {
-    action: 'INCREMENT',
-    framework,
-    timestamp: Date.now(),
-    previousValue,
-    newValue
-  };
-  
-  // 상태 업데이트
-  await GaesupCore.dispatch(SHARED_STORE_ID, 'MERGE', {
-    count: newValue,
-    lastUpdated: Date.now(),
-    framework,
-    history: [...currentState.history, historyEntry].slice(-10) // 최근 10개만 유지
-  });
-  
-  return newValue;
+  const nextState = await GaesupCore.dispatchCounter(SHARED_STORE_ID, 1, framework, 'INCREMENT') as SharedState;
+  return nextState.count;
+}
+
+export async function incrementCountBatch(framework: string, count: number): Promise<number> {
+  const nextState = await GaesupCore.dispatchCounterBatch(SHARED_STORE_ID, 1, count, framework, 'INCREMENT') as SharedState;
+  return nextState.count;
 }
 
 export async function decrementCount(framework: string): Promise<number> {
-  const currentState = GaesupCore.select(SHARED_STORE_ID, '') as SharedState;
-  const previousValue = currentState.count;
-  const newValue = previousValue - 1;
-  
-  // 히스토리 추가
-  const historyEntry = {
-    action: 'DECREMENT',
-    framework,
-    timestamp: Date.now(),
-    previousValue,
-    newValue
-  };
-  
-  // 상태 업데이트
-  await GaesupCore.dispatch(SHARED_STORE_ID, 'MERGE', {
-    count: newValue,
-    lastUpdated: Date.now(),
-    framework,
-    history: [...currentState.history, historyEntry].slice(-10)
-  });
-  
-  return newValue;
+  const nextState = await GaesupCore.dispatchCounter(SHARED_STORE_ID, -1, framework, 'DECREMENT') as SharedState;
+  return nextState.count;
 }
 
 export async function resetCount(framework: string): Promise<number> {
