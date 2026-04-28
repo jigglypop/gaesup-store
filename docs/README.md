@@ -1,79 +1,26 @@
 # Gaesup-State 문서
 
-Gaesup-State는 프론트엔드에서 WASM 패키지를 작은 컨테이너처럼 다루기 위한 상태 관리 및 실행 런타임입니다. 핵심은 단순히 상태를 빠르게 업데이트하는 것이 아니라, 컨테이너가 어떤 의존성, 어떤 ABI, 어떤 store schema를 기대하는지 명시하고 실행 전에 검증하는 것입니다.
+이 문서는 Gaesup-State를 구현하거나 사용하는 사람이 전체 구조를 빠르게 잡을 수 있도록 정리한 문서입니다.
 
-## 왜 필요한가
+Gaesup-State는 일반 상태관리 라이브러리처럼 사용할 수 있지만, 내부 목표는 조금 더 넓습니다. Rust/WASM core가 상태를 관리하고, WASM 패키지는 manifest로 실행 계약을 선언합니다. host는 패키지를 실행하기 전에 ABI, dependency, store schema, accelerator 조건을 검증합니다.
 
-프론트엔드가 커지면 다음 문제가 생깁니다.
+## 한 문장으로
 
-- 여러 프레임워크가 같은 상태를 서로 다르게 복사해서 들고 있음
-- WASM 패키지가 어떤 host 의존성을 기대하는지 불명확함
-- 패키지별 의존성 버전이 충돌함
-- store schema가 맞지 않는데 같은 전역 상태에 붙으면서 상태가 어긋남
-- GPU 가속이 필요한 패키지가 host/runtime의 CUDA 또는 WebGPU 지원 여부를 모른 채 실행됨
-- 컨테이너처럼 격리하고 싶지만 브라우저에서는 Docker 컨테이너를 그대로 쓸 수 없음
-
-Gaesup-State는 이 문제를 다음 방식으로 풉니다.
-
-- WASM 패키지는 manifest로 ABI, 의존성, 권한, store 계약을 선언합니다.
-- host는 `CompatibilityGuard`로 manifest를 먼저 검증합니다.
-- 패키지가 자기 의존성을 번들링하면 host 의존성과 충돌하지 않고 실행할 수 있습니다.
-- store schema가 맞으면 공유 store에 붙고, 맞지 않으면 격리 store로 실행해야 합니다.
-- CUDA, WebGPU 같은 가속기는 manifest에 요구사항을 선언하고 host/runtime 제공 여부를 검증합니다.
-- React, Vue, Svelte, Angular 어댑터는 같은 Gaesup store를 구독합니다.
-
-## 현재 구현된 범위
-
-현재 저장소에는 다음이 구현되어 있습니다.
-
-- `GaesupCore` 기반 named store 생성, 조회, dispatch, subscribe
-- store schema 등록 및 조회
-- container manifest 타입
-- package dependency 계약
-- bundled dependency 표시
-- CUDA/WebGPU accelerator 계약
-- store dependency 계약
-- `CompatibilityGuard` 검증
-- `ContainerManager` manifest 검증 연결
-- React, Vue, Svelte, Angular 패키지 빌드
-- multi-framework demo
-- dependency isolation demo
-- container builder manifest 생성 흐름
-
-## 빠른 실행
-
-```bash
-corepack enable
-corepack prepare pnpm@8.10.0 --activate
-pnpm install
-pnpm -r --filter "./packages/**" run build
-pnpm --filter @gaesup-state/multi-framework-demo run dev -- --host 0.0.0.0
-```
-
-브라우저에서 엽니다.
-
-```text
-http://localhost:3000/
-```
-
-데모는 두 페이지로 구성됩니다.
-
-1. 공유 카운터
-   - React, Vue, Svelte, Angular-like 카드가 같은 store를 구독합니다.
-   - 어느 카드에서 버튼을 눌러도 네 카드의 count가 같이 바뀝니다.
-
-2. 의존성 격리 확인
-   - host 의존성을 공유해도 되는 패키지
-   - 자기 의존성을 패키징해서 실행되는 패키지
-   - store schema 충돌로 격리 실행되는 패키지
-   - CUDA 가속기 계약을 통과해 GPU 경로로 실행되는 패키지
-   - host 의존성 충돌로 차단되는 패키지
+Gaesup-State는 프론트엔드에서 WASM 패키지를 컨테이너처럼 다루기 위한 상태관리 겸 실행 계약 런타임입니다.
 
 ## 핵심 개념
 
 ### Store
 
-store는 `storeId`로 식별됩니다. 하나의 store는 여러 프레임워크에서 동시에 구독할 수 있습니다.
+store는 `storeId`로 구분되는 상태 공간입니다. React, Vue, Svelte, Angular 같은 여러 프레임워크가 같은 store를 구독할 수 있습니다.
+
+```typescript
+await GaesupCore.createStore('orders', { count: 0 });
+await GaesupCore.dispatch('orders', 'MERGE', { count: 1 });
+const count = GaesupCore.select('orders', 'count');
+```
+
+store는 schema 정보를 가질 수 있습니다. schema는 WASM 패키지가 공유 상태에 붙어도 되는지 판단할 때 쓰입니다.
 
 ```typescript
 await GaesupCore.createStore('orders', { items: [] }, {
@@ -85,9 +32,9 @@ await GaesupCore.createStore('orders', { items: [] }, {
 });
 ```
 
-### Container manifest
+### Manifest
 
-WASM 컨테이너는 실행 전에 manifest를 제공합니다.
+WASM 패키지는 자신이 필요한 실행 조건을 manifest에 적습니다.
 
 ```typescript
 const manifest = {
@@ -109,69 +56,117 @@ const manifest = {
 };
 ```
 
-### Bundled dependency
+host는 이 manifest를 보고 실행 가능 여부를 결정합니다.
 
-컨테이너가 자기 의존성을 패키징하면 host 의존성 버전과 충돌하지 않습니다.
+### Dependency isolation
 
-```typescript
-dependencies: [
-  { name: 'chart.js', version: '^3.9.0', source: 'bundled' }
-]
+의존성은 크게 두 종류입니다.
+
+| source | 의미 |
+| --- | --- |
+| `host` | host가 제공하는 라이브러리 버전을 사용합니다. 버전 범위가 맞아야 실행됩니다. |
+| `bundled` | 패키지 안에 포함된 라이브러리를 사용합니다. host 버전과 충돌하지 않습니다. |
+
+예를 들어 host가 `chart.js@4.4.3`을 쓰고 있는데 어떤 패키지가 `chart.js@^3.9.0`을 요구하면, `source: 'host'`일 때는 차단해야 합니다. 하지만 `source: 'bundled'`라면 패키지 내부의 `chart.js@3`으로 실행할 수 있습니다.
+
+이 방식의 목적은 단순합니다. 패키지가 host의 dependency graph를 몰래 바꾸거나, 다른 패키지의 런타임을 깨지 못하게 막습니다.
+
+### Store schema isolation
+
+패키지가 요구하는 store schema와 host store schema가 맞지 않으면 공유 상태에 붙이면 안 됩니다.
+
+정책은 다음처럼 동작합니다.
+
+| 정책 | 동작 |
+| --- | --- |
+| `reject` | 공유 store 접근을 막고 패키지 실행을 실패 처리합니다. |
+| `isolate` | 공유 store 대신 격리된 namespace를 줍니다. |
+| `readonly` | 읽기 전용 접근을 의도하는 정책입니다. enforcement는 별도 구현이 필요합니다. |
+| `migrate` | schema migration을 의도하는 정책입니다. migration 구현이 없으면 실패 처리해야 합니다. |
+
+현재 구현에서 가장 중요한 흐름은 `reject`와 `isolate`입니다. schema가 맞지 않는데 공유 store에 붙는 상황을 막는 것이 1차 목적입니다.
+
+### Render state
+
+R3F나 WebGPU 기반 화면에서는 상태 업데이트가 일반 UI보다 훨씬 자주 일어납니다. 매 프레임 React state를 바꾸면 reconciliation 비용이 커지고, JSON patch를 많이 만들면 직렬화와 객체 생성 비용이 커집니다.
+
+Gaesup-State의 render runtime은 다음 흐름을 목표로 합니다.
+
+1. 화면 전환과 transform state는 Rust WASM store가 들고 있습니다.
+2. 프레임마다 바뀐 entity만 dirty로 표시합니다.
+3. JS는 dirty matrix buffer만 받아서 R3F 또는 WebGPU buffer에 씁니다.
+
+현재 브라우저 환경에서는 WebGPU와 Three.js API 호출 자체가 JS 경계를 지나야 합니다. 하지만 넘어가는 데이터를 typed array로 줄이면 비용을 크게 낮출 수 있습니다.
+
+## Rust core 모듈
+
+`packages/core-rust/src`는 다음 모듈로 나뉩니다.
+
+| 파일 | 역할 |
+| --- | --- |
+| `lib.rs` | wasm-bindgen export와 모듈 entry point |
+| `store.rs` | named store, dispatch, subscribe, snapshot, metrics |
+| `compatibility.rs` | manifest, dependency, store schema, accelerator 검증 |
+| `container.rs` | 컨테이너 생성, 정지, call, metrics |
+| `render.rs` | render store, entity transform, screen transition, matrix buffer |
+| `render_math.rs` | matrix composition과 렌더 수학 |
+
+`lib.rs`는 되도록 얇게 유지하고, 기능은 각 모듈에 둡니다. 테스트도 모듈 가까이에 두어 Rust 쪽에서 바로 검증할 수 있게 합니다.
+
+## 현재 구현 범위
+
+- Rust WASM core 빌드
+- native Rust 단위 테스트
+- `wasm-pack` 기반 web/bundler/node package 생성
+- TypeScript wrapper
+- multi-framework demo
+- dependency isolation demo
+- render dirty matrix buffer fast path
+- Containerfile 스타일 manifest 예시
+
+아직 완전한 Docker-in-browser나 실제 CUDA 실행 엔진을 제공하는 것은 아닙니다. 브라우저 안에서는 Docker 컨테이너를 그대로 띄우는 것이 아니라, WASM 패키지를 컨테이너처럼 검증하고 격리하는 모델입니다. CUDA는 브라우저 직접 실행이 아니라 host/runtime이 제공하는 accelerator 계약으로 다룹니다.
+
+## 확인 명령
+
+```bash
+pnpm run build:wasm
+pnpm --filter @gaesup-state/core run build
+pnpm --filter @gaesup-state/multi-framework-demo run build
 ```
 
-이 경우 host가 `chart.js@4.4.3`을 쓰고 있어도 컨테이너는 자기 내부의 `chart.js@3`으로 실행될 수 있습니다.
+Rust:
 
-### Accelerator contract
-
-브라우저 코드가 CUDA를 직접 실행하는 것은 아닙니다. CUDA는 브라우저 밖의 host/runtime, 네이티브 사이드카, 로컬 에이전트, 서버 런타임 같은 실행 계층이 제공해야 합니다. Gaesup-State는 컨테이너가 필요한 가속기와 capability를 manifest에 적고, host가 이를 제공할 때만 해당 경로를 열어주는 계약을 둡니다.
-
-```typescript
-accelerators: [
-  { kind: 'cuda', version: '>=12.0.0', capabilities: ['sm_80'] }
-]
+```bash
+cd packages/core-rust
+cargo test
+cargo check --target wasm32-unknown-unknown --features wasm
 ```
 
-의존성은 컨테이너에 패키징하고, GPU runtime은 host 계약으로 검증할 수 있습니다.
+데모:
 
-```typescript
-dependencies: [
-  { name: 'onnxruntime-gpu', version: '^1.18.0', source: 'bundled' }
-],
-accelerators: [
-  { kind: 'cuda', version: '>=12.0.0', capabilities: ['sm_80'] }
-]
+```bash
+pnpm --filter @gaesup-state/multi-framework-demo run dev -- --host 0.0.0.0
 ```
-
-### Store conflict
-
-store schema가 맞지 않을 때 선택지는 정책에 따라 달라집니다.
-
-- `reject`: 공유 store 접근을 차단하고 실행 실패
-- `isolate`: 공유 store 대신 격리 store namespace로 실행
-- `readonly`: 읽기 전용 정책, 런타임 enforcement 필요
-- `migrate`: schema migration 흐름, 별도 구현 필요
-
-현재 런타임 enforcement가 없는 정책은 실제 `ContainerManager`에서 fail-closed로 처리합니다. 데모에서는 정책 의미를 보여주기 위해 `CompatibilityGuard` 판정 결과를 시각화합니다.
 
 ## 문서 목록
 
 - [빠른 시작](./quick-start.md)
 - [API 레퍼런스](./api-reference.md)
+- [성능 메모](./performance.md)
+- [Docker/WASM 패키징](./docker-integration.md)
+- [Render runtime](./render-runtime.md)
+
+## 심화 문서
+
 - [아키텍처 개요](./01_architecture_overview.md)
-- [중앙 매니저](./02_central_manager.md)
-- [라우팅 및 격리 슬롯](./03_apartment_routing.md)
+- [중앙 관리자](./02_central_manager.md)
+- [라우팅과 격리 영역](./03_apartment_routing.md)
 - [Manifest 서비스](./04_manifest_service.md)
 - [디자인 토큰](./05_design_tokens.md)
 - [컨테이너 생명주기](./06_container_lifecycle.md)
-- [상태 관리](./07_state_management.md)
+- [상태관리](./07_state_management.md)
 - [관측성](./08_observability.md)
 - [보안과 격리](./09_security_isolation.md)
-- [CI/CD](./10_cicd_pipeline.md)
-- [마이그레이션](./11_migration_guide.md)
+- [CI/CD 파이프라인](./10_cicd_pipeline.md)
+- [마이그레이션 가이드](./11_migration_guide.md)
 - [성능 최적화](./12_performance_optimization.md)
-- [Docker/WASM 패키징](./docker-integration.md)
-- [성능 메모](./performance.md)
-
-## 이름에 대해
-
-현재 이름인 `gaesup-store`는 상태 관리 관점에서는 자연스럽습니다. 다만 지금 범위는 store를 넘어 WASM 실행, manifest, 의존성 검증, 격리 정책까지 포함합니다. 장기적으로는 `gaesup-runtime`이 더 넓은 의미를 담기 좋습니다.

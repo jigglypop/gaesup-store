@@ -1,38 +1,76 @@
-# CI/CD
+# CI/CD 파이프라인
 
-권장 검증 순서입니다.
+Gaesup-State는 TypeScript 패키지와 Rust/WASM 패키지를 함께 검증해야 합니다.
+
+## 기본 순서
+
+```text
+install
+  -> rust test
+  -> wasm build
+  -> TypeScript build
+  -> example build
+  -> integration test
+```
 
 ## 설치
 
 ```bash
-corepack enable
-corepack prepare pnpm@8.10.0 --activate
 pnpm install
+rustup target add wasm32-unknown-unknown
+cargo install wasm-pack
 ```
 
-## 빌드
+CI 환경에서는 `wasm-pack`과 Rust toolchain cache를 잡는 것이 좋습니다.
+
+## Rust 확인
 
 ```bash
+cd packages/core-rust
+cargo test
+cargo check --target wasm32-unknown-unknown --features wasm
+```
+
+native test는 모듈 로직을 빠르게 확인합니다. wasm target check는 browser build에서 깨지는 부분을 잡습니다.
+
+## WASM 빌드
+
+```bash
+pnpm run build:wasm
+```
+
+출력:
+
+- `packages/core-rust/pkg`
+- `packages/core-rust/pkg-web`
+- `packages/core-rust/pkg-node`
+
+## TypeScript 빌드
+
+```bash
+pnpm --filter @gaesup-state/core run build
 pnpm -r --filter "./packages/**" run build
-pnpm --filter @gaesup-state/container-builder run build
+```
+
+## 예제 빌드
+
+```bash
 pnpm --filter @gaesup-state/multi-framework-demo run build
 ```
 
-## 테스트
+## 권장 CI 체크
 
-```bash
-pnpm --filter @gaesup-state/core exec vitest run src/__tests__/core.test.ts
-```
+- 문서 인코딩 깨짐 검사
+- Rust unit test
+- wasm target check
+- WASM package build
+- TypeScript type check
+- demo build
+- Playwright smoke test
 
-## 데모 smoke test
+## 실패 시 우선순위
 
-```bash
-pnpm --filter @gaesup-state/multi-framework-demo run dev -- --host 0.0.0.0
-```
-
-확인할 것:
-
-- 페이지가 200으로 열림
-- 공유 카운터 네 개가 같이 업데이트됨
-- 의존성 격리 페이지에 공유 실행, 패키징 실행, 격리 실행, 차단이 표시됨
-- 브라우저 serious console error가 없음
+1. Rust test가 깨지면 core 로직을 먼저 봅니다.
+2. wasm build가 깨지면 wasm-bindgen export와 feature를 봅니다.
+3. TypeScript build가 깨지면 wrapper 타입을 봅니다.
+4. demo만 깨지면 adapter 또는 example wiring을 봅니다.
