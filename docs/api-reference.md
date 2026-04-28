@@ -104,6 +104,43 @@ await GaesupCore.dispatchCounterBatch('shared', 1, 1000, 'benchmark', 'INCREMENT
 
 같은 counter update를 Rust 안에서 batch 처리합니다. JS/WASM 경계를 반복해서 넘지 않으므로 벤치마크와 대량 업데이트에 유리합니다.
 
+### dispatchCounterFast
+
+```typescript
+const nextCount = await GaesupCore.dispatchCounterFast('shared', 1);
+```
+
+`count` 필드만 in-place로 갱신하고 새 count 숫자만 반환합니다. history, framework, lastUpdated 같은 demo metadata를 만들지 않으므로 단일 counter update가 훨씬 가볍습니다.
+
+### dispatchCounterBatchFast
+
+```typescript
+const nextCount = await GaesupCore.dispatchCounterBatchFast('shared', 1, 1000);
+```
+
+1000개 논리 increment를 Rust 안에서 한 번에 처리하고 새 count 숫자만 반환합니다. 벤치마크와 고빈도 counter update에는 이 경로가 가장 빠릅니다.
+
+### counter handle fast path
+
+```typescript
+const handle = await GaesupCore.createCounterHandle('shared');
+
+const nextCount = await GaesupCore.dispatchCounterHandleFast(handle, 1);
+const batchCount = await GaesupCore.dispatchCounterHandleBatchFast(handle, 1, 1000);
+
+GaesupCore.releaseCounterHandle(handle);
+```
+
+counter handle은 `storeId` 문자열 lookup을 줄이고 Rust 내부 counter lane을 직접 갱신합니다. `select('shared', 'count')`는 lane 값을 읽기 때문에 최신 count와 어긋나지 않습니다. 전체 state가 필요하면 lane 값이 store state로 flush됩니다.
+
+검증이 끝난 핸들을 아주 뜨거운 루프에서 재사용할 때는 unchecked 경로를 쓸 수 있습니다.
+
+```typescript
+const nextCount = GaesupCore.dispatchCounterHandleFastUnchecked(handle, 1);
+```
+
+unchecked 경로는 없는 handle을 넘겼을 때 안전한 error를 만들지 않습니다. 일반 앱 코드에서는 checked handle API를 우선 사용하세요.
+
 ### select
 
 ```typescript

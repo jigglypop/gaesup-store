@@ -20,6 +20,31 @@ for (let i = 0; i < 1000; i++) {
 await GaesupCore.dispatchCounterBatch('shared', 1, 1000, 'bench', 'INCREMENT');
 ```
 
+가장 빠른 counter path:
+
+```typescript
+await GaesupCore.dispatchCounterBatchFast('shared', 1, 1000);
+```
+
+`dispatchCounter`는 demo metadata와 history를 만들기 때문에 일반 fast path가 아닙니다. count만 필요하면 `dispatchCounterFast` 또는 `dispatchCounterBatchFast`를 씁니다.
+
+같은 store를 반복 갱신한다면 handle을 재사용합니다.
+
+```typescript
+const handle = await GaesupCore.createCounterHandle('shared');
+await GaesupCore.dispatchCounterHandleFast(handle, 1);
+await GaesupCore.dispatchCounterHandleBatchFast(handle, 1, 1000);
+GaesupCore.releaseCounterHandle(handle);
+```
+
+검증된 handle을 매우 뜨거운 루프에서만 쓴다면 unchecked 경로도 있습니다.
+
+```typescript
+GaesupCore.dispatchCounterHandleFastUnchecked(handle, 1);
+```
+
+이 경로는 error 객체를 만들지 않기 때문에 빠르지만, 잘못된 handle을 넘기면 안전한 실패 대신 `NaN` 계열 결과를 받을 수 있습니다.
+
 ## select 줄이기
 
 매 렌더마다 큰 store 전체를 읽는 것은 피합니다.

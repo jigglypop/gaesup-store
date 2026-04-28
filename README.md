@@ -89,6 +89,21 @@ await GaesupCore.dispatchCounter('shared', 1, 'react', 'INCREMENT');
 await GaesupCore.dispatchCounterBatch('shared', 1, 1000, 'benchmark', 'INCREMENT');
 ```
 
+`history`, `framework`, `lastUpdated` 같은 demo metadata가 필요 없고 count만 빠르게 바꾸면 fast path를 씁니다.
+
+```typescript
+await GaesupCore.dispatchCounterFast('shared', 1);
+await GaesupCore.dispatchCounterBatchFast('shared', 1, 1000);
+```
+
+더 뜨거운 루프에서는 counter handle을 만들어 `storeId` 문자열 lookup까지 줄일 수 있습니다.
+
+```typescript
+const handle = await GaesupCore.createCounterHandle('shared');
+await GaesupCore.dispatchCounterHandleFast(handle, 1);
+await GaesupCore.dispatchCounterHandleBatchFast(handle, 1, 1000);
+```
+
 ## 의존성 격리 모델
 
 WASM 패키지는 manifest에 필요한 의존성을 적습니다.
@@ -152,7 +167,10 @@ const frame = await bridge.tick(16.6);
 | 작업 | 최근 측정 감 |
 | --- | ---: |
 | 개별 counter dispatch 1000회 | 수백 ms대 |
-| counter batch 1000회 | 1ms 안팎까지 가능 |
+| counter fast update 1회 | 약 0.46us |
+| counter handle update 1회 | 약 0.30us |
+| counter handle unchecked update 1회 | 약 0.19us |
+| counter handle batch 1000회 | 약 0.33us |
 | render JSON patch 10,000개 | 약 70ms대 |
 | render 전체 matrix buffer 10,000개 | 약 10ms대 후반 |
 | dirty matrix buffer 1,000개 갱신 | 약 1ms대 |
@@ -213,18 +231,6 @@ cargo check --target wasm32-unknown-unknown --features wasm
 - [성능 메모](./docs/performance.md)
 - [Docker/WASM 패키징](./docs/docker-integration.md)
 - [Render runtime](./docs/render-runtime.md)
-
-## 이름에 대해
-
-현재 저장소 이름은 `gaesup-store`이고, 상태관리 관점에서는 잘 맞습니다. 다만 기능 범위가 WASM runtime, dependency isolation, container manifest, accelerator contract까지 커졌기 때문에 장기적으로는 `gaesup-runtime`도 자연스러운 후보입니다.
-
-라이브러리 이름으로는 다음 정도가 어울립니다.
-
-- `gaesup-store`: 상태관리 중심으로 가장 직관적입니다.
-- `gaesup-runtime`: WASM 컨테이너와 실행 환경까지 포함한다는 느낌이 강합니다.
-- `gaesup-core`: 낮은 레벨의 기반 라이브러리 느낌입니다.
-
-지금 단계에서는 `gaesup-store`를 유지하고, 내부 패키지나 문서에서 runtime 개념을 명확히 설명하는 편이 덜 흔들립니다.
 
 ## 라이선스
 

@@ -141,6 +141,22 @@ await GaesupCore.dispatchCounter('shared', 1, 'react', 'INCREMENT');
 await GaesupCore.dispatchCounterBatch('shared', 1, 1000, 'benchmark', 'INCREMENT');
 ```
 
+metadata가 필요 없고 count만 빠르게 바꾸면 fast path를 씁니다.
+
+```typescript
+const nextCount = await GaesupCore.dispatchCounterFast('shared', 1);
+const batchCount = await GaesupCore.dispatchCounterBatchFast('shared', 1, 1000);
+```
+
+프레임 루프나 벤치마크처럼 같은 store를 아주 자주 갱신하면 counter handle을 만들어 재사용합니다.
+
+```typescript
+const handle = await GaesupCore.createCounterHandle('shared');
+await GaesupCore.dispatchCounterHandleFast(handle, 1);
+await GaesupCore.dispatchCounterHandleBatchFast(handle, 1, 1000);
+GaesupCore.releaseCounterHandle(handle);
+```
+
 ## store schema 등록
 
 패키지가 공유 store에 붙어도 되는지 판단하려면 host가 store schema를 알고 있어야 합니다.

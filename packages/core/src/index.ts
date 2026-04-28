@@ -153,6 +153,38 @@ export const GaesupCore = {
     dispatchListeners.get(storeId)?.forEach((listener) => listener({ type: `${actionName}_BATCH`, payload: { delta, count, framework } }, state));
     return state;
   },
+  async dispatchCounterFast(storeId: string, delta: number) {
+    await ensureReady();
+    return (wasm as any).dispatch_counter_fast(storeId, delta) as number;
+  },
+  async dispatchCounterBatchFast(storeId: string, delta: number, count: number) {
+    await ensureReady();
+    return (wasm as any).dispatch_counter_batch_fast(storeId, delta, count) as number;
+  },
+  async createCounterHandle(storeId: string) {
+    await ensureReady();
+    return (wasm as any).create_counter_handle(storeId) as number;
+  },
+  releaseCounterHandle(handle: number) {
+    requireReady();
+    return (wasm as any).release_counter_handle(handle);
+  },
+  async dispatchCounterHandleFast(handle: number, delta: number) {
+    await ensureReady();
+    return (wasm as any).dispatch_counter_handle_fast(handle, delta) as number;
+  },
+  async dispatchCounterHandleBatchFast(handle: number, delta: number, count: number) {
+    await ensureReady();
+    return (wasm as any).dispatch_counter_handle_batch_fast(handle, delta, count) as number;
+  },
+  dispatchCounterHandleFastUnchecked(handle: number, delta: number) {
+    requireReady();
+    return (wasm as any).dispatch_counter_handle_fast_unchecked(handle, delta) as number;
+  },
+  dispatchCounterHandleBatchFastUnchecked(handle: number, delta: number, count: number) {
+    requireReady();
+    return (wasm as any).dispatch_counter_handle_batch_fast_unchecked(handle, delta, count) as number;
+  },
   select(storeIdOrPath = 'main', maybePath?: string) {
     requireReady();
     const storeId = maybePath === undefined ? 'main' : storeIdOrPath;

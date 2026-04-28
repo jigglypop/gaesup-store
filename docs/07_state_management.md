@@ -47,6 +47,13 @@ await GaesupCore.dispatchCounter('shared', 1, 'react', 'INCREMENT');
 await GaesupCore.dispatchCounterBatch('shared', 1, 1000, 'benchmark', 'INCREMENT');
 ```
 
+history나 framework metadata가 필요 없으면 fast path를 사용합니다.
+
+```typescript
+await GaesupCore.dispatchCounterFast('shared', 1);
+await GaesupCore.dispatchCounterBatchFast('shared', 1, 1000);
+```
+
 ## 구독
 
 ```typescript
