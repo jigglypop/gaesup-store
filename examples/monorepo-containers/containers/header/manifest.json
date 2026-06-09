@@ -1,0 +1,30 @@
+{
+  "manifestVersion": "1.0",
+  "name": "@shop/header",
+  "version": "1.4.0",
+  "runtime": "wasm",
+  "gaesup": {
+    "abiVersion": "^1.0.0"
+  },
+  "dependencies": [
+    {
+      "name": "date-fns",
+      "version": "^2.29.0",
+      "source": "host"
+    }
+  ],
+  "stores": [
+    {
+      "storeId": "session",
+      "schemaId": "session-state",
+      "schemaVersion": "^1.0.0",
+      "conflictPolicy": "reject"
+    }
+  ],
+  "deployment": {
+    "slot": "header",
+    "releaseId": "web-2026-04-28.1",
+    "slotVersion": "1.4.0",
+    "contractVersion": "1.1.0"
+  }
+}

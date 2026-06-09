@@ -46,7 +46,10 @@ pub fn create_container(config: JsValue) -> Result<JsValue, JsValue> {
         .and_then(Value::as_str)
         .map(ToString::to_string)
         .unwrap_or_else(|| next_id(&name));
-    let state = config.get("initialState").cloned().unwrap_or_else(|| serde_json::json!({}));
+    let state = config
+        .get("initialState")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
     let container = WasmContainer {
         id: id.clone(),
         name,
@@ -76,7 +79,11 @@ pub fn stop_container(container_id: &str) -> Result<JsValue, JsValue> {
 }
 
 #[wasm_bindgen]
-pub fn call_container(container_id: &str, function_name: &str, args: JsValue) -> Result<JsValue, JsValue> {
+pub fn call_container(
+    container_id: &str,
+    function_name: &str,
+    args: JsValue,
+) -> Result<JsValue, JsValue> {
     let args = from_js(args)?;
     CONTAINERS.with(|containers| {
         let mut containers = containers.borrow_mut();
@@ -87,7 +94,11 @@ pub fn call_container(container_id: &str, function_name: &str, args: JsValue) ->
             "increment" => {
                 let framework = args
                     .as_str()
-                    .or_else(|| args.as_array().and_then(|items| items.first()).and_then(Value::as_str))
+                    .or_else(|| {
+                        args.as_array()
+                            .and_then(|items| items.first())
+                            .and_then(Value::as_str)
+                    })
                     .unwrap_or("unknown");
                 let count = container.call_increment(framework, js_sys::Date::now());
                 serde_json::json!(count)
@@ -98,7 +109,7 @@ pub fn call_container(container_id: &str, function_name: &str, args: JsValue) ->
                     "functionName": function_name,
                     "args": args,
                 })
-            },
+            }
         };
 
         to_js(&result)
@@ -139,11 +150,13 @@ pub fn list_containers() -> Result<JsValue, JsValue> {
         let items: Vec<Value> = containers
             .borrow()
             .values()
-            .map(|container| serde_json::json!({
-                "id": container.id,
-                "name": container.name,
-                "status": container.status,
-            }))
+            .map(|container| {
+                serde_json::json!({
+                    "id": container.id,
+                    "name": container.name,
+                    "status": container.status,
+                })
+            })
             .collect();
         to_js(&items)
     })

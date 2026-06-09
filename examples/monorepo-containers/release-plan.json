@@ -1,0 +1,38 @@
+{
+  "releaseId": "web-2026-04-28.1",
+  "strictRelease": true,
+  "slots": [
+    {
+      "slot": "shell",
+      "packageName": "@shop/shell",
+      "version": "1.0.0",
+      "releaseId": "web-2026-04-28.1",
+      "slotVersion": "1.0.0",
+      "contractVersion": "1.0.0"
+    },
+    {
+      "slot": "header",
+      "packageName": "@shop/header",
+      "version": "1.4.0",
+      "releaseId": "web-2026-04-28.1",
+      "slotVersion": "1.4.0",
+      "contractVersion": "1.1.0"
+    },
+    {
+      "slot": "body",
+      "packageName": "@shop/body",
+      "version": "1.8.0",
+      "releaseId": "web-2026-04-28.1",
+      "slotVersion": "1.8.0",
+      "contractVersion": "1.2.0"
+    },
+    {
+      "slot": "sidebar",
+      "packageName": "@shop/sidebar",
+      "version": "1.2.0",
+      "releaseId": "web-2026-04-28.1",
+      "slotVersion": "1.2.0",
+      "contractVersion": "1.0.0"
+    }
+  ]
+}

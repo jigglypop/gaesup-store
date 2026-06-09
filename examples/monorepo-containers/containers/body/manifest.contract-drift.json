@@ -1,0 +1,22 @@
+{
+  "manifestVersion": "1.0",
+  "name": "@shop/body",
+  "version": "1.8.0",
+  "runtime": "wasm",
+  "gaesup": {
+    "abiVersion": "^1.0.0"
+  },
+  "deployment": {
+    "slot": "body",
+    "releaseId": "web-2026-04-28.1",
+    "slotVersion": "1.8.0",
+    "contractVersion": "1.2.0",
+    "requires": [
+      {
+        "slot": "header",
+        "slotVersion": "^2.0.0",
+        "contractVersion": "^2.0.0"
+      }
+    ]
+  }
+}

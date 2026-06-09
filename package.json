@@ -25,6 +25,8 @@
     "bench": "pnpm run build && node benchmarks/run-all.js",
     "bench:compare": "node benchmarks/compare-state-libraries.mjs",
     "bench:bottleneck": "node benchmarks/gaesup-bottleneck-probe.mjs",
+    "bench:runtime": "node benchmarks/state-contract-runtime.mjs",
+    "example:monorepo": "pnpm --filter @gaesup-example/monorepo-containers run validate",
     "npm:check": "pnpm --filter gaesup-state run test && pnpm --filter gaesup-state run type-check && pnpm --filter gaesup-state run build && pnpm --filter gaesup-state run pack:dry && pnpm --filter gaesup-state-core-rust run pack:dry",
     "npm:smoke": "node scripts/npm-smoke.cjs",
     "demo": "cd examples/multi-framework-demo && pnpm dev",

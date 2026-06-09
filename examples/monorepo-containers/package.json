@@ -1,0 +1,15 @@
+{
+  "name": "@gaesup-example/monorepo-containers",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Monorepo-style WASM container deployment guard example",
+  "scripts": {
+    "changed": "node scripts/list-changed-containers.mjs",
+    "validate": "node scripts/validate-deployment.mjs",
+    "validate:affected": "node scripts/validate-affected-deployment.mjs"
+  },
+  "dependencies": {
+    "gaesup-state-core-rust": "workspace:*"
+  }
+}

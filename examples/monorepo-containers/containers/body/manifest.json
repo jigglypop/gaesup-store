@@ -1,0 +1,44 @@
+{
+  "manifestVersion": "1.0",
+  "name": "@shop/body",
+  "version": "1.8.0",
+  "runtime": "wasm",
+  "gaesup": {
+    "abiVersion": "^1.0.0"
+  },
+  "dependencies": [
+    {
+      "name": "zod",
+      "version": "^3.20.0",
+      "source": "host"
+    }
+  ],
+  "stores": [
+    {
+      "storeId": "cart",
+      "schemaId": "cart-state",
+      "schemaVersion": "^1.2.0",
+      "conflictPolicy": "reject"
+    }
+  ],
+  "deployment": {
+    "slot": "body",
+    "releaseId": "web-2026-04-28.1",
+    "slotVersion": "1.8.0",
+    "contractVersion": "1.2.0",
+    "requires": [
+      {
+        "slot": "header",
+        "releaseId": "web-2026-04-28.1",
+        "slotVersion": "^1.4.0",
+        "contractVersion": "^1.1.0"
+      },
+      {
+        "slot": "sidebar",
+        "releaseId": "web-2026-04-28.1",
+        "slotVersion": "^1.2.0",
+        "contractVersion": "^1.0.0"
+      }
+    ]
+  }
+}

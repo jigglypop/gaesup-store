@@ -1,0 +1,29 @@
+{
+  "manifestVersion": "1.0",
+  "name": "@shop/shell",
+  "version": "1.0.0",
+  "runtime": "wasm",
+  "gaesup": {
+    "abiVersion": "^1.0.0"
+  },
+  "deployment": {
+    "slot": "shell",
+    "releaseId": "web-2026-04-28.1",
+    "slotVersion": "1.0.0",
+    "contractVersion": "1.0.0",
+    "requires": [
+      {
+        "slot": "header",
+        "releaseId": "web-2026-04-28.1",
+        "slotVersion": "^1.4.0",
+        "contractVersion": "^1.1.0"
+      },
+      {
+        "slot": "body",
+        "releaseId": "web-2026-04-28.1",
+        "slotVersion": "^1.8.0",
+        "contractVersion": "^1.2.0"
+      }
+    ]
+  }
+}

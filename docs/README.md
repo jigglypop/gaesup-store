@@ -139,10 +139,13 @@ http://localhost:3000/
 - [Auto store](./auto-store.md)
 - [Resource와 query](./resource-query.md)
 - [Dispatch pipeline](./pipeline.md)
+- [Deployment guard](./deployment-guard.md)
 - [npm 배포 준비](./npm-publish.md)
 - [성능 메모](./performance.md)
 - [Docker/WASM 패키징](./docker-integration.md)
 - [Render runtime](./render-runtime.md)
+- [운영 배포 준비도](./production-readiness.md)
+- [GitHub monorepo Git flow](./git-flow.md)
 
 ## 세부 문서
 
@@ -168,8 +171,11 @@ http://localhost:3000/
 3. [Resource와 query](./resource-query.md)
 4. [Dispatch pipeline](./pipeline.md)
 5. [Docker/WASM 패키징](./docker-integration.md)
-6. [성능 메모](./performance.md)
-7. [Render runtime](./render-runtime.md)
+6. [Deployment guard](./deployment-guard.md)
+7. [운영 배포 준비도](./production-readiness.md)
+8. [GitHub monorepo Git flow](./git-flow.md)
+9. [성능 메모](./performance.md)
+10. [Render runtime](./render-runtime.md)
 
 ## API 선택 기준
 
@@ -179,5 +185,8 @@ http://localhost:3000/
 | React Query 같은 API 상태를 store와 같이 관리 | [Resource와 query](./resource-query.md) |
 | 여러 dispatch를 한 번에 묶기 | [Dispatch pipeline](./pipeline.md) |
 | WASM 패키지 의존성 격리 | [Docker/WASM 패키징](./docker-integration.md) |
+| 화면 조각 배포가 어긋나지 않게 막기 | [Deployment guard](./deployment-guard.md) |
+| 운영 배포 전에 부족한 점 점검 | [운영 배포 준비도](./production-readiness.md) |
+| GitHub 모노레포 브랜치와 커밋 흐름 | [GitHub monorepo Git flow](./git-flow.md) |
 | R3F/WebGPU 화면 갱신 | [Render runtime](./render-runtime.md) |
 | Zustand/Jotai/Redux와 속도 비교 | [성능 메모](./performance.md) |

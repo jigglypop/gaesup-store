@@ -14,8 +14,15 @@ pub fn validate_manifest(manifest: JsValue, host: JsValue) -> Result<JsValue, Js
 
     validate_abi(&manifest, &host, &mut errors);
     validate_dependencies(&manifest, &host, &mut errors, &mut warnings);
-    validate_stores(&manifest, &host, &mut errors, &mut warnings, &mut isolated_stores);
+    validate_stores(
+        &manifest,
+        &host,
+        &mut errors,
+        &mut warnings,
+        &mut isolated_stores,
+    );
     validate_accelerators(&manifest, &host, &mut errors, &mut warnings);
+    validate_deployment(&manifest, &host, &mut errors, &mut warnings);
 
     to_js(&ValidationResult {
         valid: errors.is_empty(),
@@ -35,7 +42,9 @@ struct ValidationResult {
 }
 
 fn validate_abi(manifest: &Value, host: &Value, errors: &mut Vec<Value>) {
-    let required = manifest.pointer("/gaesup/abiVersion").and_then(Value::as_str);
+    let required = manifest
+        .pointer("/gaesup/abiVersion")
+        .and_then(Value::as_str);
     let provided = host.get("abiVersion").and_then(Value::as_str);
     if let (Some(required), Some(provided)) = (required, provided) {
         if !version_satisfies(provided, required) {
@@ -55,11 +64,25 @@ fn validate_dependencies(
     errors: &mut Vec<Value>,
     warnings: &mut Vec<Value>,
 ) {
-    for dependency in manifest.get("dependencies").and_then(Value::as_array).cloned().unwrap_or_default() {
+    for dependency in manifest
+        .get("dependencies")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+    {
         let name = dependency.get("name").and_then(Value::as_str).unwrap_or("");
-        let required = dependency.get("version").and_then(Value::as_str).unwrap_or("*");
-        let source = dependency.get("source").and_then(Value::as_str).unwrap_or("host");
-        let optional = dependency.get("optional").and_then(Value::as_bool).unwrap_or(false);
+        let required = dependency
+            .get("version")
+            .and_then(Value::as_str)
+            .unwrap_or("*");
+        let source = dependency
+            .get("source")
+            .and_then(Value::as_str)
+            .unwrap_or("host");
+        let optional = dependency
+            .get("optional")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
 
         if source == "bundled" {
             warnings.push(validation_issue(
@@ -97,10 +120,18 @@ fn validate_stores(
     warnings: &mut Vec<Value>,
     isolated_stores: &mut Vec<Value>,
 ) {
-    for store in manifest.get("stores").and_then(Value::as_array).cloned().unwrap_or_default() {
+    for store in manifest
+        .get("stores")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+    {
         let store_id = store.get("storeId").and_then(Value::as_str).unwrap_or("");
         let schema_id = store.get("schemaId").and_then(Value::as_str).unwrap_or("");
-        let required = store.get("schemaVersion").and_then(Value::as_str).unwrap_or("*");
+        let required = store
+            .get("schemaVersion")
+            .and_then(Value::as_str)
+            .unwrap_or("*");
         let policy = store
             .get("conflictPolicy")
             .and_then(Value::as_str)
@@ -150,10 +181,21 @@ fn validate_accelerators(
     errors: &mut Vec<Value>,
     warnings: &mut Vec<Value>,
 ) {
-    for accelerator in manifest.get("accelerators").and_then(Value::as_array).cloned().unwrap_or_default() {
-        let kind = accelerator.get("kind").and_then(Value::as_str).unwrap_or("");
+    for accelerator in manifest
+        .get("accelerators")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+    {
+        let kind = accelerator
+            .get("kind")
+            .and_then(Value::as_str)
+            .unwrap_or("");
         let required_version = accelerator.get("version").and_then(Value::as_str);
-        let optional = accelerator.get("optional").and_then(Value::as_bool).unwrap_or(false);
+        let optional = accelerator
+            .get("optional")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
 
         let Some(provided) = host_accelerator(host, kind) else {
             let output = validation_issue(
@@ -177,20 +219,32 @@ fn validate_accelerators(
             if !version_satisfies(provided_version, required) {
                 errors.push(validation_issue(
                     "ACCELERATOR_VERSION_MISMATCH",
-                    &format!("Accelerator {kind} requires {required}, host provides {provided_version}"),
+                    &format!(
+                        "Accelerator {kind} requires {required}, host provides {provided_version}"
+                    ),
                     "error",
                     kind,
                 ));
             }
         }
 
-        let provided_capabilities = provided.get("capabilities").and_then(Value::as_array).cloned().unwrap_or_default();
-        let required_capabilities = accelerator.get("capabilities").and_then(Value::as_array).cloned().unwrap_or_default();
+        let provided_capabilities = provided
+            .get("capabilities")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let required_capabilities = accelerator
+            .get("capabilities")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
         for capability in required_capabilities {
             let Some(capability) = capability.as_str() else {
                 continue;
             };
-            let found = provided_capabilities.iter().any(|provided| provided.as_str() == Some(capability));
+            let found = provided_capabilities
+                .iter()
+                .any(|provided| provided.as_str() == Some(capability));
             if !found {
                 errors.push(validation_issue(
                     "ACCELERATOR_CAPABILITY_MISSING",
@@ -200,6 +254,129 @@ fn validate_accelerators(
                 ));
             }
         }
+    }
+}
+
+fn validate_deployment(
+    manifest: &Value,
+    host: &Value,
+    errors: &mut Vec<Value>,
+    warnings: &mut Vec<Value>,
+) {
+    let Some(deployment) = manifest.get("deployment") else {
+        return;
+    };
+
+    let host_deployment = host.get("deployment");
+    let manifest_release = deployment.get("releaseId").and_then(Value::as_str);
+    let host_release = host_deployment
+        .and_then(|deployment| deployment.get("releaseId"))
+        .and_then(Value::as_str);
+    let strict_release = host_deployment
+        .and_then(|deployment| deployment.get("strictRelease"))
+        .and_then(Value::as_bool)
+        .unwrap_or(host_release.is_some());
+
+    if strict_release {
+        match (manifest_release, host_release) {
+            (Some(required), Some(provided)) if required == provided => {}
+            (Some(required), Some(provided)) => errors.push(validation_issue(
+                "DEPLOYMENT_RELEASE_MISMATCH",
+                &format!("Container release {required} does not match host release {provided}"),
+                "error",
+                "deployment.releaseId",
+            )),
+            (Some(_), None) => errors.push(validation_issue(
+                "DEPLOYMENT_RELEASE_MISSING",
+                "Container declares a releaseId but host has no deployment releaseId",
+                "error",
+                "deployment.releaseId",
+            )),
+            (None, Some(_)) => errors.push(validation_issue(
+                "DEPLOYMENT_RELEASE_MISSING",
+                "Host requires a deployment releaseId but container did not declare one",
+                "error",
+                "deployment.releaseId",
+            )),
+            (None, None) => {}
+        }
+    }
+
+    if let Some(slot) = deployment.get("slot").and_then(Value::as_str) {
+        if let Some(host_slot) = host_deployment.and_then(|host| host_slot(host, slot)) {
+            let package_name = manifest.get("name").and_then(Value::as_str).unwrap_or("");
+            let package_version = manifest
+                .get("version")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            let host_package = host_slot
+                .get("packageName")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            let host_version = host_slot
+                .get("version")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+
+            if !host_package.is_empty() && !package_name.is_empty() && host_package != package_name
+            {
+                errors.push(validation_issue(
+                    "DEPLOYMENT_SLOT_PACKAGE_MISMATCH",
+                    &format!(
+                        "Slot {slot} is pinned to {host_package}, container is {package_name}"
+                    ),
+                    "error",
+                    slot,
+                ));
+            }
+
+            if !host_version.is_empty()
+                && !package_version.is_empty()
+                && !version_satisfies(package_version, host_version)
+            {
+                errors.push(validation_issue(
+                    "DEPLOYMENT_SLOT_VERSION_MISMATCH",
+                    &format!("Slot {slot} requires package version {host_version}, container is {package_version}"),
+                    "error",
+                    slot,
+                ));
+            }
+        }
+    }
+
+    for requirement in deployment
+        .get("requires")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+    {
+        let slot = requirement
+            .get("slot")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        if slot.is_empty() {
+            warnings.push(validation_issue(
+                "DEPLOYMENT_REQUIREMENT_IGNORED",
+                "Deployment requirement without a slot was ignored",
+                "warning",
+                "deployment.requires",
+            ));
+            continue;
+        }
+
+        let Some(host_slot) = host_deployment.and_then(|host| host_slot(host, slot)) else {
+            errors.push(validation_issue(
+                "DEPLOYMENT_SLOT_MISSING",
+                &format!("Required deployment slot {slot} is not registered on the host"),
+                "error",
+                slot,
+            ));
+            continue;
+        };
+
+        validate_slot_release(&requirement, &host_slot, slot, errors);
+        validate_slot_version(&requirement, &host_slot, slot, errors);
+        validate_slot_contract(&requirement, &host_slot, slot, errors);
     }
 }
 
@@ -216,10 +393,17 @@ fn host_dependency_version(host: &Value, name: &str) -> Option<String> {
     match host.get("dependencies")? {
         Value::Array(items) => items.iter().find_map(|item| {
             (item.get("name").and_then(Value::as_str) == Some(name))
-                .then(|| item.get("version").and_then(Value::as_str).map(ToString::to_string))
+                .then(|| {
+                    item.get("version")
+                        .and_then(Value::as_str)
+                        .map(ToString::to_string)
+                })
                 .flatten()
         }),
-        Value::Object(map) => map.get(name).and_then(Value::as_str).map(ToString::to_string),
+        Value::Object(map) => map
+            .get(name)
+            .and_then(Value::as_str)
+            .map(ToString::to_string),
         _ => None,
     }
 }
@@ -228,8 +412,16 @@ fn host_store_schema(host: &Value, store_id: &str) -> Option<(String, String)> {
     host.get("stores")?.as_array()?.iter().find_map(|store| {
         if store.get("storeId").and_then(Value::as_str) == Some(store_id) {
             Some((
-                store.get("schemaId").and_then(Value::as_str).unwrap_or("").to_string(),
-                store.get("schemaVersion").and_then(Value::as_str).unwrap_or("").to_string(),
+                store
+                    .get("schemaId")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string(),
+                store
+                    .get("schemaVersion")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string(),
             ))
         } else {
             None
@@ -238,9 +430,85 @@ fn host_store_schema(host: &Value, store_id: &str) -> Option<(String, String)> {
 }
 
 fn host_accelerator(host: &Value, kind: &str) -> Option<Value> {
-    host.get("accelerators")?.as_array()?.iter().find_map(|accelerator| {
-        (accelerator.get("kind").and_then(Value::as_str) == Some(kind)).then(|| accelerator.clone())
-    })
+    host.get("accelerators")?
+        .as_array()?
+        .iter()
+        .find_map(|accelerator| {
+            (accelerator.get("kind").and_then(Value::as_str) == Some(kind))
+                .then(|| accelerator.clone())
+        })
+}
+
+fn host_slot(host_deployment: &Value, slot: &str) -> Option<Value> {
+    host_deployment
+        .get("slots")?
+        .as_array()?
+        .iter()
+        .find_map(|item| {
+            (item.get("slot").and_then(Value::as_str) == Some(slot)).then(|| item.clone())
+        })
+}
+
+fn validate_slot_release(
+    requirement: &Value,
+    host_slot: &Value,
+    slot: &str,
+    errors: &mut Vec<Value>,
+) {
+    let required = requirement.get("releaseId").and_then(Value::as_str);
+    let provided = host_slot.get("releaseId").and_then(Value::as_str);
+    if let (Some(required), Some(provided)) = (required, provided) {
+        if required != provided {
+            errors.push(validation_issue(
+                "DEPLOYMENT_SLOT_RELEASE_MISMATCH",
+                &format!(
+                    "Slot {slot} release {provided} does not match required release {required}"
+                ),
+                "error",
+                slot,
+            ));
+        }
+    }
+}
+
+fn validate_slot_version(
+    requirement: &Value,
+    host_slot: &Value,
+    slot: &str,
+    errors: &mut Vec<Value>,
+) {
+    let required = requirement.get("slotVersion").and_then(Value::as_str);
+    let provided = host_slot.get("slotVersion").and_then(Value::as_str);
+    if let (Some(required), Some(provided)) = (required, provided) {
+        if !version_satisfies(provided, required) {
+            errors.push(validation_issue(
+                "DEPLOYMENT_SLOT_VERSION_MISMATCH",
+                &format!("Slot {slot} version {provided} does not satisfy {required}"),
+                "error",
+                slot,
+            ));
+        }
+    }
+}
+
+fn validate_slot_contract(
+    requirement: &Value,
+    host_slot: &Value,
+    slot: &str,
+    errors: &mut Vec<Value>,
+) {
+    let required = requirement.get("contractVersion").and_then(Value::as_str);
+    let provided = host_slot.get("contractVersion").and_then(Value::as_str);
+    if let (Some(required), Some(provided)) = (required, provided) {
+        if !version_satisfies(provided, required) {
+            errors.push(validation_issue(
+                "DEPLOYMENT_SLOT_CONTRACT_MISMATCH",
+                &format!("Slot {slot} contract {provided} does not satisfy {required}"),
+                "error",
+                slot,
+            ));
+        }
+    }
 }
 
 fn version_satisfies(provided: &str, required: &str) -> bool {
@@ -258,7 +526,9 @@ fn version_satisfies(provided: &str, required: &str) -> bool {
         return compare_version(provided, base) >= 0;
     }
     if let Some(base) = required.strip_prefix('~').and_then(parse_version) {
-        return provided.0 == base.0 && provided.1 == base.1 && compare_version(provided, base) >= 0;
+        return provided.0 == base.0
+            && provided.1 == base.1
+            && compare_version(provided, base) >= 0;
     }
     parse_version(required)
         .map(|base| compare_version(provided, base) == 0)
@@ -271,7 +541,11 @@ fn parse_version(version: &str) -> Option<(i32, i32, i32)> {
         .filter(|part| !part.is_empty())
         .take(3)
         .map(|part| part.parse::<i32>().ok());
-    Some((numbers.next()??, numbers.next()??, numbers.next().flatten().unwrap_or(0)))
+    Some((
+        numbers.next()??,
+        numbers.next()??,
+        numbers.next().flatten().unwrap_or(0),
+    ))
 }
 
 fn compare_version(left: (i32, i32, i32), right: (i32, i32, i32)) -> i32 {
@@ -384,6 +658,95 @@ mod tests {
 
         assert_eq!(errors[0]["code"], "ACCELERATOR_CAPABILITY_MISSING");
         assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn deployment_release_mismatch_is_error() {
+        let manifest = json!({
+            "name": "body-widget",
+            "version": "1.0.0",
+            "deployment": {
+                "slot": "body",
+                "releaseId": "release-b"
+            }
+        });
+        let host = json!({
+            "deployment": {
+                "releaseId": "release-a",
+                "strictRelease": true,
+                "slots": [
+                    { "slot": "header", "releaseId": "release-a", "slotVersion": "1.2.0", "contractVersion": "1.0.0" }
+                ]
+            }
+        });
+        let mut errors = vec![];
+        let mut warnings = vec![];
+
+        validate_deployment(&manifest, &host, &mut errors, &mut warnings);
+
+        assert_eq!(errors[0]["code"], "DEPLOYMENT_RELEASE_MISMATCH");
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn deployment_requires_peer_slot_contract() {
+        let manifest = json!({
+            "name": "body-widget",
+            "version": "1.0.0",
+            "deployment": {
+                "slot": "body",
+                "releaseId": "release-a",
+                "requires": [
+                    { "slot": "header", "releaseId": "release-a", "slotVersion": "^1.2.0", "contractVersion": "^1.0.0" }
+                ]
+            }
+        });
+        let host = json!({
+            "deployment": {
+                "releaseId": "release-a",
+                "slots": [
+                    { "slot": "header", "releaseId": "release-a", "slotVersion": "1.3.0", "contractVersion": "1.1.0" }
+                ]
+            }
+        });
+        let mut errors = vec![];
+        let mut warnings = vec![];
+
+        validate_deployment(&manifest, &host, &mut errors, &mut warnings);
+
+        assert!(errors.is_empty());
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn deployment_blocks_old_peer_slot_contract() {
+        let manifest = json!({
+            "name": "body-widget",
+            "version": "1.0.0",
+            "deployment": {
+                "slot": "body",
+                "releaseId": "release-a",
+                "requires": [
+                    { "slot": "header", "slotVersion": "^2.0.0", "contractVersion": "^2.0.0" }
+                ]
+            }
+        });
+        let host = json!({
+            "deployment": {
+                "releaseId": "release-a",
+                "slots": [
+                    { "slot": "header", "releaseId": "release-a", "slotVersion": "1.3.0", "contractVersion": "1.1.0" }
+                ]
+            }
+        });
+        let mut errors = vec![];
+        let mut warnings = vec![];
+
+        validate_deployment(&manifest, &host, &mut errors, &mut warnings);
+
+        assert_eq!(errors.len(), 2);
+        assert_eq!(errors[0]["code"], "DEPLOYMENT_SLOT_VERSION_MISMATCH");
+        assert_eq!(errors[1]["code"], "DEPLOYMENT_SLOT_CONTRACT_MISMATCH");
     }
 
     #[test]

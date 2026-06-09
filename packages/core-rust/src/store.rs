@@ -97,8 +97,14 @@ impl Store {
             COUNTER_HANDLES.with(|handles| {
                 if let Some(lane) = handles.borrow_mut().get_mut(&handle) {
                     self.fast_count = Some(lane.value);
-                    self.metrics.total_updates = self.metrics.total_updates.saturating_add(lane.pending_updates);
-                    self.metrics.total_dispatches = self.metrics.total_dispatches.saturating_add(lane.pending_dispatches);
+                    self.metrics.total_updates = self
+                        .metrics
+                        .total_updates
+                        .saturating_add(lane.pending_updates);
+                    self.metrics.total_dispatches = self
+                        .metrics
+                        .total_dispatches
+                        .saturating_add(lane.pending_dispatches);
                     lane.pending_updates = 0;
                     lane.pending_dispatches = 0;
                 }
@@ -156,7 +162,9 @@ pub fn cleanup_store(store_id: &str) {
         stores.borrow_mut().remove(store_id);
     });
     COUNTER_HANDLES.with(|handles| {
-        handles.borrow_mut().retain(|_, lane| lane.store_id != store_id);
+        handles
+            .borrow_mut()
+            .retain(|_, lane| lane.store_id != store_id);
     });
 }
 
@@ -198,7 +206,12 @@ pub fn dispatch(store_id: &str, action_type: &str, payload: JsValue) -> Result<J
 }
 
 #[wasm_bindgen]
-pub fn dispatch_counter(store_id: &str, delta: i32, framework: &str, action_name: &str) -> Result<JsValue, JsValue> {
+pub fn dispatch_counter(
+    store_id: &str,
+    delta: i32,
+    framework: &str,
+    action_name: &str,
+) -> Result<JsValue, JsValue> {
     let start = js_sys::Date::now();
     let timestamp = js_sys::Date::now();
 
@@ -316,12 +329,15 @@ pub fn create_counter_handle(store_id: &str) -> Result<u32, JsValue> {
         store.fast_count = Some(value);
         store.counter_handle = Some(handle);
         COUNTER_HANDLES.with(|handles| {
-            handles.borrow_mut().insert(handle, CounterLane {
-                store_id: store_id.to_string(),
-                value,
-                pending_updates: 0,
-                pending_dispatches: 0,
-            });
+            handles.borrow_mut().insert(
+                handle,
+                CounterLane {
+                    store_id: store_id.to_string(),
+                    value,
+                    pending_updates: 0,
+                    pending_dispatches: 0,
+                },
+            );
         });
         Ok(handle)
     })
@@ -335,8 +351,14 @@ pub fn release_counter_handle(handle: u32) {
             if let Some(store) = stores.borrow_mut().get_mut(&lane.store_id) {
                 store.fast_count = Some(lane.value);
                 store.flush_fast_count();
-                store.metrics.total_updates = store.metrics.total_updates.saturating_add(lane.pending_updates);
-                store.metrics.total_dispatches = store.metrics.total_dispatches.saturating_add(lane.pending_dispatches);
+                store.metrics.total_updates = store
+                    .metrics
+                    .total_updates
+                    .saturating_add(lane.pending_updates);
+                store.metrics.total_dispatches = store
+                    .metrics
+                    .total_dispatches
+                    .saturating_add(lane.pending_dispatches);
                 store.counter_handle = None;
             }
         });
@@ -349,7 +371,11 @@ pub fn dispatch_counter_handle_fast(handle: u32, delta: i32) -> Result<f64, JsVa
 }
 
 #[wasm_bindgen]
-pub fn dispatch_counter_handle_batch_fast(handle: u32, delta: i32, count: u32) -> Result<f64, JsValue> {
+pub fn dispatch_counter_handle_batch_fast(
+    handle: u32,
+    delta: i32,
+    count: u32,
+) -> Result<f64, JsValue> {
     COUNTER_HANDLES.with(|handles| {
         let mut handles = handles.borrow_mut();
         let lane = handles
@@ -411,7 +437,11 @@ pub fn select(store_id: &str, path: &str) -> Result<JsValue, JsValue> {
 }
 
 #[wasm_bindgen]
-pub fn subscribe(store_id: &str, path: &str, callback: js_sys::Function) -> Result<String, JsValue> {
+pub fn subscribe(
+    store_id: &str,
+    path: &str,
+    callback: js_sys::Function,
+) -> Result<String, JsValue> {
     STORES.with(|stores| {
         let mut stores = stores.borrow_mut();
         let store = stores
@@ -450,7 +480,9 @@ pub fn create_snapshot(store_id: &str) -> Result<String, JsValue> {
 
         store.flush_counter_lane();
         let snapshot_id = next_id("snap");
-        store.snapshots.insert(snapshot_id.clone(), store.state.clone());
+        store
+            .snapshots
+            .insert(snapshot_id.clone(), store.state.clone());
         Ok(snapshot_id)
     })
 }
@@ -617,7 +649,10 @@ fn apply_action(current: &Value, action_type: &str, payload: Value) -> Result<Va
                     .or_else(|| update.get("type"))
                     .and_then(Value::as_str)
                     .unwrap_or("UPDATE");
-                let nested_payload = update.get("payload").cloned().unwrap_or_else(|| update.clone());
+                let nested_payload = update
+                    .get("payload")
+                    .cloned()
+                    .unwrap_or_else(|| update.clone());
                 apply_action_mut(&mut next, nested_action_type, nested_payload)?;
             }
 
@@ -664,7 +699,10 @@ fn apply_action_mut(state: &mut Value, action_type: &str, payload: Value) -> Res
                     .or_else(|| update.get("type"))
                     .and_then(Value::as_str)
                     .unwrap_or("UPDATE");
-                let nested_payload = update.get("payload").cloned().unwrap_or_else(|| update.clone());
+                let nested_payload = update
+                    .get("payload")
+                    .cloned()
+                    .unwrap_or_else(|| update.clone());
                 apply_action_mut(state, nested_action_type, nested_payload)?;
             }
             Ok(())
@@ -690,7 +728,10 @@ fn apply_counter_steps(
 
     object.insert("count".to_string(), Value::Number(new_value.into()));
     object.insert("lastUpdated".to_string(), json_number(timestamp));
-    object.insert("framework".to_string(), Value::String(framework.to_string()));
+    object.insert(
+        "framework".to_string(),
+        Value::String(framework.to_string()),
+    );
 
     let mut history = object
         .get("history")
@@ -718,12 +759,7 @@ fn apply_counter_steps(
 }
 
 fn counter_lane_value(handle: u32) -> Option<i64> {
-    COUNTER_HANDLES.with(|handles| {
-        handles
-            .borrow()
-            .get(&handle)
-            .map(|lane| lane.value)
-    })
+    COUNTER_HANDLES.with(|handles| handles.borrow().get(&handle).map(|lane| lane.value))
 }
 
 fn counter_lane_metrics(handle: u32) -> Option<(u32, u32)> {
@@ -826,7 +862,7 @@ fn collect_notifications(store: &Store) -> Vec<(String, js_sys::Function)> {
 
 fn notify_subscribers(
     state: &Value,
-    notifications: &[(String, js_sys::Function)]
+    notifications: &[(String, js_sys::Function)],
 ) -> Result<(), JsValue> {
     for (path, callback) in notifications {
         let selected = select_value(state, path).unwrap_or(&Value::Null);
@@ -855,10 +891,15 @@ mod tests {
     #[test]
     fn update_sets_nested_path() {
         let current = json!({ "user": { "name": "A" } });
-        let next = apply_action(&current, "UPDATE", json!({
-            "path": "user.age",
-            "value": 7
-        })).unwrap();
+        let next = apply_action(
+            &current,
+            "UPDATE",
+            json!({
+                "path": "user.age",
+                "value": 7
+            }),
+        )
+        .unwrap();
         assert_eq!(next["user"]["name"], "A");
         assert_eq!(next["user"]["age"], 7);
     }
@@ -876,11 +917,16 @@ mod tests {
             "user": { "name": "A", "age": 7 },
             "count": 1
         });
-        let next = apply_action(&current, "BATCH", json!([
-            { "actionType": "UPDATE", "payload": { "path": "user.name", "value": "B" } },
-            { "actionType": "DELETE", "payload": { "path": "user.age" } },
-            { "actionType": "MERGE", "payload": { "count": 2 } }
-        ])).unwrap();
+        let next = apply_action(
+            &current,
+            "BATCH",
+            json!([
+                { "actionType": "UPDATE", "payload": { "path": "user.name", "value": "B" } },
+                { "actionType": "DELETE", "payload": { "path": "user.age" } },
+                { "actionType": "MERGE", "payload": { "count": 2 } }
+            ]),
+        )
+        .unwrap();
 
         assert_eq!(next["user"]["name"], "B");
         assert!(next["user"].get("age").is_none());

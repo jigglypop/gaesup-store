@@ -53,6 +53,7 @@ export interface HostCompatibilityConfig {
   dependencies?: PackageDependencyContract[] | Record<string, string>;
   stores?: RegisteredStoreSchema[];
   accelerators?: HostAcceleratorContract[];
+  deployment?: HostDeploymentContract;
 }
 
 export interface ContainerPackageManifest {
@@ -64,8 +65,39 @@ export interface ContainerPackageManifest {
   dependencies?: PackageDependencyContract[];
   stores?: StoreDependencyContract[];
   accelerators?: AcceleratorDependencyContract[];
+  deployment?: ContainerDeploymentContract;
   allowedImports?: string[];
   permissions?: Record<string, any>;
+}
+
+export interface DeploymentSlotContract {
+  slot: string;
+  packageName?: string;
+  version?: string;
+  releaseId?: string;
+  slotVersion?: string;
+  contractVersion?: string;
+}
+
+export interface HostDeploymentContract {
+  releaseId?: string;
+  strictRelease?: boolean;
+  slots?: DeploymentSlotContract[];
+}
+
+export interface ContainerSlotRequirement {
+  slot: string;
+  releaseId?: string;
+  slotVersion?: string;
+  contractVersion?: string;
+}
+
+export interface ContainerDeploymentContract {
+  slot?: string;
+  releaseId?: string;
+  slotVersion?: string;
+  contractVersion?: string;
+  requires?: ContainerSlotRequirement[];
 }
 
 export interface ValidationIssue {
@@ -612,6 +644,89 @@ export type GaesupResource<T, TVariables = void> = GaesupAutoState<ResourceState
   invalidate(): Promise<void>;
 };
 
+export type MachineStatus = 'active' | 'final' | 'error';
+
+export interface MachineTransitionConfig {
+  target?: string;
+  guard?: string | { path: string; op?: string; value?: any };
+  cond?: string | { path: string; op?: string; value?: any };
+  action?: string | string[] | Record<string, any>;
+  actions?: string | string[] | Record<string, any>;
+  assign?: Record<string, any>;
+}
+
+export interface MachineStateConfig {
+  final?: boolean;
+  entry?: string | string[] | Record<string, any>;
+  exit?: string | string[] | Record<string, any>;
+  on?: Record<string, string | MachineTransitionConfig | MachineTransitionConfig[]>;
+}
+
+export interface MachineDefinition<TContext = any> {
+  id: string;
+  initial: string;
+  context?: TContext;
+  states: Record<string, MachineStateConfig>;
+}
+
+export interface MachineHistoryEntry {
+  from: string;
+  to: string;
+  event: string;
+  timestamp: number;
+  durationMs: number;
+}
+
+export interface MachineEffectDescriptor {
+  id: string;
+  type: string;
+  payload?: any;
+  permission?: string;
+}
+
+export interface MachineSnapshot<TContext = any> {
+  machineId: string;
+  state: string;
+  context: TContext;
+  status: MachineStatus;
+  step: number;
+  history: MachineHistoryEntry[];
+  changed: boolean;
+  actions: MachineEffectDescriptor[];
+}
+
+export interface MachineTransitionResult<TContext = any> {
+  accepted: boolean;
+  snapshot: MachineSnapshot<TContext>;
+  rejectedReason?: string;
+  effects: MachineEffectDescriptor[];
+  effectResults?: Array<{ effect: MachineEffectDescriptor; status: 'resolved' | 'rejected' | 'denied'; result?: any; error?: any }>;
+}
+
+export interface GaesupMachine<TContext = any> {
+  id: string;
+  definition: MachineDefinition<TContext>;
+}
+
+export interface MachineActorOptions<TContext = any> {
+  storeId?: string;
+  context?: TContext;
+  guards?: Record<string, (input: { context: TContext; event: any; snapshot?: MachineSnapshot<TContext> }) => boolean>;
+  effects?: Record<string, (input: { payload: any; event?: any; snapshot: MachineSnapshot<TContext> }) => any | Promise<any>>;
+  allowedEffects?: string[];
+  executeEffects?: boolean;
+}
+
+export interface GaesupMachineActor<TContext = any> {
+  readonly id: string;
+  start(): Promise<MachineSnapshot<TContext>>;
+  send(event: string | Record<string, any>): Promise<MachineTransitionResult<TContext>>;
+  subscribe(listener: (snapshot: MachineSnapshot<TContext>) => void): () => void;
+  getSnapshot(): MachineSnapshot<TContext> | undefined;
+  rollback(options?: { steps?: number }): Promise<MachineTransitionResult<TContext>>;
+  stop(): void;
+}
+
 type AutoStoreMutation = {
   actionType: 'SET' | 'MERGE' | 'UPDATE' | 'DELETE' | 'BATCH';
   path: string;
@@ -993,6 +1108,95 @@ export function resource<T, TVariables = void>(
 
 export const query = resource;
 
+export function createMachine<TContext = any>(definition: MachineDefinition<TContext>): GaesupMachine<TContext> {
+  return {
+    id: definition.id,
+    definition
+  };
+}
+
+export function createActor<TContext = any>(
+  machine: GaesupMachine<TContext> | MachineDefinition<TContext>,
+  options: MachineActorOptions<TContext> = {}
+): GaesupMachineActor<TContext> {
+  const definition = 'definition' in machine ? machine.definition : machine;
+  let wasmMachineId: string | null = null;
+  let currentSnapshot: MachineSnapshot<TContext> | undefined;
+  const listeners = new Set<(snapshot: MachineSnapshot<TContext>) => void>();
+
+  const notify = () => {
+    if (!currentSnapshot) return;
+    listeners.forEach((listener) => listener(currentSnapshot!));
+  };
+
+  const persistSnapshot = async () => {
+    if (!options.storeId || !currentSnapshot) return;
+    await ensureMachineStore(options.storeId);
+    await GaesupCore.dispatch(options.storeId, 'UPDATE', {
+      path: `machines.${definition.id}`,
+      value: currentSnapshot
+    });
+  };
+
+  const ensureStarted = async () => {
+    if (wasmMachineId) return wasmMachineId;
+    await ensureReady();
+    wasmMachineId = await (wasm as any).create_machine(definition);
+    const snapshot = await (wasm as any).start_machine(
+      wasmMachineId,
+      options.context === undefined ? null : clonePlain(options.context)
+    );
+    currentSnapshot = snapshot as MachineSnapshot<TContext>;
+    await persistSnapshot();
+    notify();
+    return wasmMachineId;
+  };
+
+  const api: GaesupMachineActor<TContext> = {
+    id: definition.id,
+    async start() {
+      await ensureStarted();
+      return currentSnapshot!;
+    },
+    async send(eventInput: string | Record<string, any>) {
+      const id = await ensureStarted();
+      const event = normalizeMachineEvent(eventInput);
+      event.__guards = evaluateMachineGuards(options.guards || {}, currentSnapshot, event);
+      const result = await (wasm as any).send_machine(id, clonePlain(event)) as MachineTransitionResult<TContext>;
+      currentSnapshot = result.snapshot;
+      result.effectResults = await runMachineEffects(result.effects || [], options, currentSnapshot, event);
+      await persistSnapshot();
+      notify();
+      return result;
+    },
+    subscribe(listener) {
+      listeners.add(listener);
+      if (currentSnapshot) listener(currentSnapshot);
+      return () => listeners.delete(listener);
+    },
+    getSnapshot() {
+      return currentSnapshot;
+    },
+    async rollback(rollbackOptions = {}) {
+      const id = await ensureStarted();
+      const result = await (wasm as any).rollback_machine(id, rollbackOptions.steps || 1) as MachineTransitionResult<TContext>;
+      currentSnapshot = result.snapshot;
+      await persistSnapshot();
+      notify();
+      return result;
+    },
+    stop() {
+      if (wasmMachineId) {
+        (wasm as any).cleanup_machine(wasmMachineId);
+        wasmMachineId = null;
+      }
+      listeners.clear();
+    }
+  };
+
+  return api;
+}
+
 export function createDispatchPipeline(storeId: string, options: DispatchPipelineOptions = {}): DispatchPipeline {
   const autoFlush = options.autoFlush !== false;
   const pending: AutoStoreMutation[] = [];
@@ -1213,6 +1417,73 @@ function extractMutationPath(actionType: string, payload: any) {
     return typeof payload === 'string' ? payload : payload?.path || '';
   }
   return '';
+}
+
+function normalizeMachineEvent(event: string | Record<string, any>): Record<string, any> {
+  return typeof event === 'string' ? { type: event } : { ...event };
+}
+
+function evaluateMachineGuards<TContext>(
+  guards: NonNullable<MachineActorOptions<TContext>['guards']>,
+  snapshot: MachineSnapshot<TContext> | undefined,
+  event: any
+) {
+  const output: Record<string, boolean> = {};
+  for (const [name, guard] of Object.entries(guards)) {
+    try {
+      output[name] = !!guard({
+        context: (snapshot?.context ?? {}) as TContext,
+        event,
+        snapshot
+      });
+    } catch {
+      output[name] = false;
+    }
+  }
+  return output;
+}
+
+async function runMachineEffects<TContext>(
+  effects: MachineEffectDescriptor[],
+  options: MachineActorOptions<TContext>,
+  snapshot: MachineSnapshot<TContext>,
+  event: any
+) {
+  if (options.executeEffects === false) return [];
+
+  const results: MachineTransitionResult<TContext>['effectResults'] = [];
+  const allowed = options.allowedEffects ? new Set(options.allowedEffects) : null;
+
+  for (const effect of effects) {
+    const handler = options.effects?.[effect.type];
+    if (!handler || (allowed && !allowed.has(effect.type))) {
+      results.push({ effect, status: 'denied' });
+      continue;
+    }
+
+    try {
+      const result = await handler({
+        payload: effect.payload,
+        event,
+        snapshot
+      });
+      results.push({ effect, status: 'resolved', result });
+    } catch (error) {
+      results.push({ effect, status: 'rejected', error });
+    }
+  }
+
+  return results;
+}
+
+async function ensureMachineStore(storeId: string) {
+  try {
+    await GaesupCore.createStore(storeId, { machines: {} });
+  } catch (error) {
+    if (!String((error as any)?.message || error).includes('already exists')) {
+      throw error;
+    }
+  }
 }
 
 function pathDepth(path: string) {

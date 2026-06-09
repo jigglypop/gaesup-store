@@ -1,8 +1,4 @@
-pub(crate) fn compose_matrix(
-    position: [f32; 3],
-    rotation: [f32; 3],
-    scale: [f32; 3],
-) -> [f32; 16] {
+pub(crate) fn compose_matrix(position: [f32; 3], rotation: [f32; 3], scale: [f32; 3]) -> [f32; 16] {
     let [sx, sy, sz] = scale;
     let [rx, ry, rz] = rotation;
     let [tx, ty, tz] = position;
@@ -24,10 +20,22 @@ pub(crate) fn compose_matrix(
     let m22 = cos_x * cos_y;
 
     [
-        m00 * sx, m01 * sx, m02 * sx, 0.0,
-        m10 * sy, m11 * sy, m12 * sy, 0.0,
-        m20 * sz, m21 * sz, m22 * sz, 0.0,
-        tx, ty, tz, 1.0,
+        m00 * sx,
+        m01 * sx,
+        m02 * sx,
+        0.0,
+        m10 * sy,
+        m11 * sy,
+        m12 * sy,
+        0.0,
+        m20 * sz,
+        m21 * sz,
+        m22 * sz,
+        0.0,
+        tx,
+        ty,
+        tz,
+        1.0,
     ]
 }
 

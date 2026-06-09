@@ -4,8 +4,8 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use wasm_bindgen::prelude::*;
 
-use crate::{from_js, js_error, next_id, to_js};
 use crate::render_math::compose_matrix;
+use crate::{from_js, js_error, next_id, to_js};
 
 thread_local! {
     static RENDER_STORES: RefCell<HashMap<String, RenderStore>> = RefCell::new(HashMap::new());
@@ -104,7 +104,8 @@ impl RenderStore {
 
         if let Some(transition) = self.transition.as_mut() {
             if transition.active {
-                transition.elapsed_ms = (transition.elapsed_ms + delta_ms).min(transition.duration_ms);
+                transition.elapsed_ms =
+                    (transition.elapsed_ms + delta_ms).min(transition.duration_ms);
                 self.dirty.screens = true;
                 if transition.elapsed_ms >= transition.duration_ms {
                     self.active_screen = transition.to.clone();
@@ -173,12 +174,14 @@ impl RenderStore {
         let transform_patches: Vec<Value> = transform_ids
             .iter()
             .filter_map(|id| self.entities.get(id))
-            .map(|entity| serde_json::json!({
-                "entityId": entity.id,
-                "instanceIndex": entity.instance_index,
-                "transform": entity.transform,
-                "matrix": entity.transform.matrix(),
-            }))
+            .map(|entity| {
+                serde_json::json!({
+                    "entityId": entity.id,
+                    "instanceIndex": entity.instance_index,
+                    "transform": entity.transform,
+                    "matrix": entity.transform.matrix(),
+                })
+            })
             .collect();
 
         let transition_progress = self.transition.as_ref().map(|transition| {
@@ -291,7 +294,9 @@ pub fn create_render_store(store_id: &str, initial_screen: &str) -> Result<(), J
     RENDER_STORES.with(|stores| {
         let mut stores = stores.borrow_mut();
         if stores.contains_key(store_id) {
-            return Err(js_error(&format!("Render store already exists: {store_id}")));
+            return Err(js_error(&format!(
+                "Render store already exists: {store_id}"
+            )));
         }
         stores.insert(
             store_id.to_string(),
@@ -317,9 +322,18 @@ pub fn create_render_entity(store_id: &str, entity: JsValue) -> Result<String, J
             .map(|index| index as usize)
             .unwrap_or(usize::MAX),
         transform: parse_transform(value.get("transform")),
-        material_id: value.get("materialId").and_then(Value::as_str).map(ToString::to_string),
-        mesh_id: value.get("meshId").and_then(Value::as_str).map(ToString::to_string),
-        visible: value.get("visible").and_then(Value::as_bool).unwrap_or(true),
+        material_id: value
+            .get("materialId")
+            .and_then(Value::as_str)
+            .map(ToString::to_string),
+        mesh_id: value
+            .get("meshId")
+            .and_then(Value::as_str)
+            .map(ToString::to_string),
+        visible: value
+            .get("visible")
+            .and_then(Value::as_bool)
+            .unwrap_or(true),
     };
 
     RENDER_STORES.with(|stores| {
@@ -333,7 +347,11 @@ pub fn create_render_entity(store_id: &str, entity: JsValue) -> Result<String, J
 }
 
 #[wasm_bindgen]
-pub fn set_render_transform(store_id: &str, entity_id: &str, transform: JsValue) -> Result<(), JsValue> {
+pub fn set_render_transform(
+    store_id: &str,
+    entity_id: &str,
+    transform: JsValue,
+) -> Result<(), JsValue> {
     let transform_value = from_js(transform)?;
     let transform = parse_transform(Some(&transform_value));
     RENDER_STORES.with(|stores| {
@@ -346,7 +364,11 @@ pub fn set_render_transform(store_id: &str, entity_id: &str, transform: JsValue)
 }
 
 #[wasm_bindgen]
-pub fn rotate_render_entity_y(store_id: &str, entity_id: &str, radians: f32) -> Result<(), JsValue> {
+pub fn rotate_render_entity_y(
+    store_id: &str,
+    entity_id: &str,
+    radians: f32,
+) -> Result<(), JsValue> {
     RENDER_STORES.with(|stores| {
         let mut stores = stores.borrow_mut();
         let store = stores
@@ -482,7 +504,10 @@ pub fn benchmark_render_matrix_buffer(entity_count: u32) -> Result<JsValue, JsVa
 }
 
 #[wasm_bindgen]
-pub fn benchmark_render_dirty_matrix_buffer(entity_count: u32, dirty_count: u32) -> Result<JsValue, JsValue> {
+pub fn benchmark_render_dirty_matrix_buffer(
+    entity_count: u32,
+    dirty_count: u32,
+) -> Result<JsValue, JsValue> {
     let count = entity_count.max(1);
     let dirty_count = dirty_count.min(count).max(1);
     let mut store = RenderStore::new("render-dirty-bench".to_string(), "bench".to_string());
@@ -612,7 +637,9 @@ mod tests {
         assert_eq!(patches["dirty"]["transforms"].as_array().unwrap().len(), 1);
         assert_eq!(patches["dirty"]["transforms"][0]["entityId"], "cube");
         assert_eq!(patches["dirty"]["transforms"][0]["instanceIndex"], 0);
-        assert!(patches["dirty"]["transforms"][0]["matrix"].as_array().is_some());
+        assert!(patches["dirty"]["transforms"][0]["matrix"]
+            .as_array()
+            .is_some());
 
         let patches = store.patches();
         assert_eq!(patches["dirty"]["transforms"].as_array().unwrap().len(), 0);

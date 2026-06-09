@@ -49,6 +49,12 @@ importers:
         specifier: ^7.2.0
         version: 7.2.0
 
+  examples/monorepo-containers:
+    dependencies:
+      gaesup-state-core-rust:
+        specifier: workspace:*
+        version: link:../../packages/core-rust
+
   examples/multi-framework-demo:
     dependencies:
       '@gaesup-state/adapter':
@@ -57,9 +63,6 @@ importers:
       '@gaesup-state/angular':
         specifier: workspace:*
         version: link:../../packages/frameworks/angular
-      'gaesup-state':
-        specifier: workspace:*
-        version: link:../../packages/core
       '@gaesup-state/react':
         specifier: workspace:*
         version: link:../../packages/frameworks/react
@@ -69,6 +72,9 @@ importers:
       '@gaesup-state/vue':
         specifier: workspace:*
         version: link:../../packages/frameworks/vue
+      gaesup-state:
+        specifier: workspace:*
+        version: link:../../packages/core
     devDependencies:
       '@angular/animations':
         specifier: ^17.0.0
@@ -139,12 +145,12 @@ importers:
 
   examples/todo-app:
     dependencies:
-      'gaesup-state':
-        specifier: workspace:^
-        version: link:../../packages/core
       '@gaesup-state/react':
         specifier: workspace:^
         version: link:../../packages/frameworks/react
+      gaesup-state:
+        specifier: workspace:^
+        version: link:../../packages/core
       react:
         specifier: ^18.2.0
         version: 18.3.1
@@ -170,7 +176,7 @@ importers:
 
   packages/adapter:
     dependencies:
-      'gaesup-state':
+      gaesup-state:
         specifier: 0.0.1
         version: link:../core
     devDependencies:
@@ -186,7 +192,7 @@ importers:
 
   packages/core:
     dependencies:
-      'gaesup-state-core-rust':
+      gaesup-state-core-rust:
         specifier: 0.0.1
         version: link:../core-rust
     devDependencies:
@@ -204,7 +210,7 @@ importers:
       '@gaesup-state/adapter':
         specifier: 0.0.1
         version: link:../../adapter
-      'gaesup-state':
+      gaesup-state:
         specifier: 0.0.1
         version: link:../../core
       tslib:
@@ -232,7 +238,7 @@ importers:
 
   packages/frameworks/react:
     dependencies:
-      'gaesup-state':
+      gaesup-state:
         specifier: 0.0.1
         version: link:../../core
     devDependencies:
@@ -254,7 +260,7 @@ importers:
       '@gaesup-state/adapter':
         specifier: 0.0.1
         version: link:../../adapter
-      'gaesup-state':
+      gaesup-state:
         specifier: 0.0.1
         version: link:../../core
     devDependencies:
@@ -279,7 +285,7 @@ importers:
       '@gaesup-state/adapter':
         specifier: 0.0.1
         version: link:../../adapter
-      'gaesup-state':
+      gaesup-state:
         specifier: 0.0.1
         version: link:../../core
     devDependencies:
@@ -301,15 +307,15 @@ importers:
 
   tools/container-builder:
     dependencies:
-      'gaesup-state':
-        specifier: workspace:^
-        version: link:../../packages/core
       chalk:
         specifier: ^5.3.0
         version: 5.4.1
       commander:
         specifier: ^11.1.0
         version: 11.1.0
+      gaesup-state:
+        specifier: workspace:^
+        version: link:../../packages/core
       glob:
         specifier: ^10.3.0
         version: 10.4.5

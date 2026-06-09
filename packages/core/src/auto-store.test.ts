@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const calls = vi.hoisted(() => ({
   stores: new Map<string, any>(),
+  machines: new Map<string, any>(),
   dispatches: [] as Array<{ storeId: string; actionType: string; payload: any }>
 }));
 
@@ -56,6 +57,69 @@ vi.mock('gaesup-state-core-rust/web', () => ({
   get_metrics: vi.fn(() => ({})),
   register_store_schema: vi.fn(),
   get_store_schemas: vi.fn(() => []),
+  validate_manifest: vi.fn((manifest: any, host: any) => validateManifestMock(manifest, host)),
+  create_machine: vi.fn((definition: any) => {
+    const id = definition.id;
+    calls.machines.set(id, {
+      id,
+      definition: structuredClone(definition),
+      state: definition.initial,
+      context: structuredClone(definition.context || {}),
+      status: definition.states?.[definition.initial]?.final ? 'final' : 'active',
+      step: 0,
+      history: [],
+      checkpoints: []
+    });
+    return id;
+  }),
+  start_machine: vi.fn((machineId: string, context: any) => {
+    const machine = calls.machines.get(machineId);
+    if (context) machine.context = structuredClone(context);
+    return machineSnapshotMock(machine, false, []);
+  }),
+  send_machine: vi.fn((machineId: string, event: any) => {
+    const machine = calls.machines.get(machineId);
+    const node = machine.definition.states[machine.state];
+    const transition = node.on?.[event.type];
+    if (!transition) return machineResultMock(false, machine, 'TRANSITION_NOT_FOUND', []);
+    if (transition.guard && !event.__guards?.[transition.guard]) {
+      return machineResultMock(false, machine, 'GUARD_REJECTED', []);
+    }
+
+    machine.checkpoints.push(structuredClone({
+      state: machine.state,
+      context: machine.context,
+      status: machine.status,
+      step: machine.step,
+      history: machine.history
+    }));
+
+    const target = transition.target || machine.state;
+    if (transition.assign) {
+      for (const [path, expression] of Object.entries(transition.assign)) {
+        setPath(machine.context, path, resolveMachineExpressionMock(expression, machine.context, event));
+      }
+    }
+    const effects = transition.action ? [machineEffectMock(transition.action, event)] : [];
+    machine.history.push({ from: machine.state, to: target, event: event.type, timestamp: Date.now(), durationMs: 0 });
+    machine.state = target;
+    machine.step += 1;
+    machine.status = machine.definition.states[target]?.final ? 'final' : 'active';
+    return machineResultMock(true, machine, '', effects);
+  }),
+  rollback_machine: vi.fn((machineId: string, steps = 1) => {
+    const machine = calls.machines.get(machineId);
+    let checkpoint: any;
+    for (let index = 0; index < Math.max(1, steps); index += 1) {
+      checkpoint = machine.checkpoints.pop();
+    }
+    if (!checkpoint) return machineResultMock(false, machine, 'ROLLBACK_CHECKPOINT_NOT_FOUND', []);
+    Object.assign(machine, structuredClone(checkpoint));
+    return machineResultMock(true, machine, '', []);
+  }),
+  cleanup_machine: vi.fn((machineId: string) => {
+    calls.machines.delete(machineId);
+  }),
   BatchUpdate: class {
     updates: any[] = [];
     constructor(readonly storeId: string) {}
@@ -68,7 +132,7 @@ vi.mock('gaesup-state-core-rust/web', () => ({
   }
 }));
 
-import { atom, createAutoStore, GaesupCore, gaesup, resource, tx, watch } from './index';
+import { atom, CompatibilityGuard, createActor, createAutoStore, createMachine, GaesupCore, gaesup, initGaesupCore, resource, tx, watch } from './index';
 
 describe('auto store object tracking', () => {
   beforeEach(() => {
@@ -419,6 +483,204 @@ describe('dispatch pipeline', () => {
   });
 });
 
+describe('machine actor API', () => {
+  beforeEach(() => {
+    calls.stores.clear();
+    calls.machines.clear();
+    calls.dispatches.length = 0;
+  });
+
+  it('runs guarded step transitions and persists the snapshot into a store', async () => {
+    const machine = createMachine({
+      id: 'checkout-flow',
+      initial: 'cart',
+      context: { items: [{ id: 1 }], paymentId: null as string | null },
+      states: {
+        cart: {
+          on: {
+            NEXT: { target: 'payment', guard: 'hasItems' }
+          }
+        },
+        payment: {
+          on: {
+            PAY: {
+              target: 'done',
+              action: 'requestPayment',
+              assign: { paymentId: '$event.paymentId' }
+            }
+          }
+        },
+        done: { final: true }
+      }
+    });
+
+    const effectCalls: any[] = [];
+    const actor = createActor(machine, {
+      storeId: 'workflow',
+      guards: {
+        hasItems: ({ context }) => context.items.length > 0
+      },
+      effects: {
+        requestPayment: async ({ payload }) => {
+          effectCalls.push(payload);
+          return { ok: true };
+        }
+      }
+    });
+
+    const initial = await actor.start();
+    expect(initial.state).toBe('cart');
+
+    const next = await actor.send('NEXT');
+    expect(next.accepted).toBe(true);
+    expect(next.snapshot.state).toBe('payment');
+
+    const paid = await actor.send({ type: 'PAY', paymentId: 'pay_1', payload: { amount: 3900 } });
+    expect(paid.accepted).toBe(true);
+    expect(paid.snapshot.state).toBe('done');
+    expect(paid.snapshot.context.paymentId).toBe('pay_1');
+    expect(paid.effectResults?.[0].status).toBe('resolved');
+    expect(effectCalls).toEqual([{ amount: 3900 }]);
+    expect(calls.stores.get('workflow').machines['checkout-flow'].state).toBe('done');
+  });
+
+  it('rejects a transition when a named guard returns false and supports rollback', async () => {
+    const actor = createActor(createMachine({
+      id: 'blocked-flow',
+      initial: 'draft',
+      context: { ready: false },
+      states: {
+        draft: {
+          on: {
+            NEXT: { target: 'review', guard: 'isReady' }
+          }
+        },
+        review: {}
+      }
+    }), {
+      guards: {
+        isReady: ({ context, event }) => context.ready || event.force === true
+      }
+    });
+
+    await actor.start();
+    const rejected = await actor.send('NEXT');
+    expect(rejected.accepted).toBe(false);
+    expect(rejected.rejectedReason).toBe('GUARD_REJECTED');
+
+    const accepted = await actor.send({ type: 'NEXT', force: true });
+    expect(accepted.snapshot.state).toBe('review');
+
+    const rolledBack = await actor.rollback();
+    expect(rolledBack.accepted).toBe(true);
+    expect(rolledBack.snapshot.state).toBe('draft');
+  });
+});
+
+describe('deployment drift guard', () => {
+  beforeEach(() => {
+    calls.stores.clear();
+    calls.dispatches.length = 0;
+  });
+
+  it('accepts a container slot when the release and peer slot contract match', async () => {
+    await initGaesupCore();
+    const guard = new CompatibilityGuard({
+      deployment: {
+        releaseId: 'web-2026-04-28.1',
+        strictRelease: true,
+        slots: [
+          {
+            slot: 'header',
+            packageName: 'shop-header',
+            version: '1.4.0',
+            releaseId: 'web-2026-04-28.1',
+            slotVersion: '1.4.0',
+            contractVersion: '1.1.0'
+          }
+        ]
+      }
+    });
+
+    const result = guard.validate({
+      manifestVersion: '1.0',
+      name: 'shop-body',
+      version: '1.8.0',
+      deployment: {
+        slot: 'body',
+        releaseId: 'web-2026-04-28.1',
+        requires: [
+          { slot: 'header', releaseId: 'web-2026-04-28.1', slotVersion: '^1.4.0', contractVersion: '^1.1.0' }
+        ]
+      }
+    });
+
+    expect(result.valid).toBe(true);
+    expect(result.errors).toEqual([]);
+  });
+
+  it('blocks a container slot from a different release line', async () => {
+    await initGaesupCore();
+    const guard = new CompatibilityGuard({
+      deployment: {
+        releaseId: 'web-2026-04-28.1',
+        strictRelease: true,
+        slots: []
+      }
+    });
+
+    const result = guard.validate({
+      manifestVersion: '1.0',
+      name: 'shop-body',
+      version: '1.8.0',
+      deployment: {
+        slot: 'body',
+        releaseId: 'web-2026-04-27.9'
+      }
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.errors[0].code).toBe('DEPLOYMENT_RELEASE_MISMATCH');
+  });
+
+  it('blocks a body package when its required header contract is not mounted', async () => {
+    await initGaesupCore();
+    const guard = new CompatibilityGuard({
+      deployment: {
+        releaseId: 'web-2026-04-28.1',
+        slots: [
+          {
+            slot: 'header',
+            packageName: 'shop-header',
+            releaseId: 'web-2026-04-28.1',
+            slotVersion: '1.4.0',
+            contractVersion: '1.1.0'
+          }
+        ]
+      }
+    });
+
+    const result = guard.validate({
+      manifestVersion: '1.0',
+      name: 'shop-body',
+      version: '1.8.0',
+      deployment: {
+        slot: 'body',
+        releaseId: 'web-2026-04-28.1',
+        requires: [
+          { slot: 'header', slotVersion: '^2.0.0', contractVersion: '^2.0.0' }
+        ]
+      }
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.map((error) => error.code)).toEqual([
+      'DEPLOYMENT_SLOT_VERSION_MISMATCH',
+      'DEPLOYMENT_SLOT_CONTRACT_MISMATCH'
+    ]);
+  });
+});
+
 function flattenMutations(dispatches: Array<{ storeId: string; actionType: string; payload: any }>) {
   return dispatches.flatMap((dispatch) => {
     if (dispatch.actionType !== 'BATCH') return [dispatch];
@@ -452,4 +714,124 @@ function deletePath(target: any, path: string) {
 
 function getPath(target: any, path: string) {
   return path.split('.').filter(Boolean).reduce((current, part) => current?.[part], target);
+}
+
+function validateManifestMock(manifest: any, host: any) {
+  const errors: any[] = [];
+  const warnings: any[] = [];
+  const deployment = manifest.deployment;
+  const hostDeployment = host.deployment;
+
+  if (deployment) {
+    const strictRelease = hostDeployment?.strictRelease ?? Boolean(hostDeployment?.releaseId);
+    if (strictRelease && deployment.releaseId !== hostDeployment?.releaseId) {
+      errors.push({
+        code: 'DEPLOYMENT_RELEASE_MISMATCH',
+        message: `Container release ${deployment.releaseId} does not match host release ${hostDeployment?.releaseId}`,
+        severity: 'error',
+        target: 'deployment.releaseId'
+      });
+    }
+
+    for (const requirement of deployment.requires || []) {
+      const slot = hostDeployment?.slots?.find((item: any) => item.slot === requirement.slot);
+      if (!slot) {
+        errors.push({
+          code: 'DEPLOYMENT_SLOT_MISSING',
+          message: `Required deployment slot ${requirement.slot} is not registered on the host`,
+          severity: 'error',
+          target: requirement.slot
+        });
+        continue;
+      }
+      if (requirement.releaseId && requirement.releaseId !== slot.releaseId) {
+        errors.push({
+          code: 'DEPLOYMENT_SLOT_RELEASE_MISMATCH',
+          message: `Slot ${requirement.slot} release ${slot.releaseId} does not match required release ${requirement.releaseId}`,
+          severity: 'error',
+          target: requirement.slot
+        });
+      }
+      if (requirement.slotVersion && !versionSatisfiesMock(slot.slotVersion, requirement.slotVersion)) {
+        errors.push({
+          code: 'DEPLOYMENT_SLOT_VERSION_MISMATCH',
+          message: `Slot ${requirement.slot} version ${slot.slotVersion} does not satisfy ${requirement.slotVersion}`,
+          severity: 'error',
+          target: requirement.slot
+        });
+      }
+      if (requirement.contractVersion && !versionSatisfiesMock(slot.contractVersion, requirement.contractVersion)) {
+        errors.push({
+          code: 'DEPLOYMENT_SLOT_CONTRACT_MISMATCH',
+          message: `Slot ${requirement.slot} contract ${slot.contractVersion} does not satisfy ${requirement.contractVersion}`,
+          severity: 'error',
+          target: requirement.slot
+        });
+      }
+    }
+  }
+
+  return { valid: errors.length === 0, errors, warnings, isolatedStores: [] };
+}
+
+function machineSnapshotMock(machine: any, changed: boolean, actions: any[]) {
+  return {
+    machineId: machine.id,
+    state: machine.state,
+    context: structuredClone(machine.context),
+    status: machine.status,
+    step: machine.step,
+    history: structuredClone(machine.history),
+    changed,
+    actions
+  };
+}
+
+function machineResultMock(accepted: boolean, machine: any, rejectedReason: string, effects: any[]) {
+  return {
+    accepted,
+    snapshot: machineSnapshotMock(machine, accepted, effects),
+    rejectedReason: rejectedReason || undefined,
+    effects
+  };
+}
+
+function machineEffectMock(action: any, event: any) {
+  const type = Array.isArray(action) ? action[0] : action;
+  return {
+    id: `effect:${type}`,
+    type,
+    payload: event.payload ?? event,
+    permission: `effects:${type}`
+  };
+}
+
+function resolveMachineExpressionMock(expression: any, context: any, event: any) {
+  if (expression === '$now') return Date.now();
+  if (typeof expression === 'string' && expression.startsWith('$event.')) {
+    return getPath(event, expression.slice('$event.'.length));
+  }
+  if (typeof expression === 'string' && expression.startsWith('$context.')) {
+    return getPath(context, expression.slice('$context.'.length));
+  }
+  return structuredClone(expression);
+}
+
+function versionSatisfiesMock(provided: string | undefined, required: string) {
+  if (!provided || !required || required === '*') return true;
+  const parse = (value: string) => value.split(/[^\d]+/).filter(Boolean).slice(0, 3).map(Number);
+  const left = parse(provided);
+  const right = parse(required.replace(/^[~^]/, ''));
+  if (required.startsWith('^')) return left[0] === right[0] && compareVersionMock(left, right) >= 0;
+  if (required.startsWith('~')) return left[0] === right[0] && left[1] === right[1] && compareVersionMock(left, right) >= 0;
+  if (required.startsWith('>=')) return compareVersionMock(left, parse(required.slice(2))) >= 0;
+  return compareVersionMock(left, right) === 0;
+}
+
+function compareVersionMock(left: number[], right: number[]) {
+  for (let index = 0; index < 3; index += 1) {
+    const diff = (left[index] || 0) - (right[index] || 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
 }

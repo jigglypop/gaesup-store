@@ -1,0 +1,30 @@
+{
+  "manifestVersion": "1.0",
+  "name": "@shop/sidebar",
+  "version": "1.2.0",
+  "runtime": "wasm",
+  "gaesup": {
+    "abiVersion": "^1.0.0"
+  },
+  "dependencies": [
+    {
+      "name": "chart.js",
+      "version": "^3.9.0",
+      "source": "bundled"
+    }
+  ],
+  "stores": [
+    {
+      "storeId": "recommendations",
+      "schemaId": "recommendation-state",
+      "schemaVersion": "^1.0.0",
+      "conflictPolicy": "isolate"
+    }
+  ],
+  "deployment": {
+    "slot": "sidebar",
+    "releaseId": "web-2026-04-28.1",
+    "slotVersion": "1.2.0",
+    "contractVersion": "1.0.0"
+  }
+}

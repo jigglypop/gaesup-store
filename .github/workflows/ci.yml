@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - develop
+
+jobs:
+  test:
+    name: Test and build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 8.10.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install wasm-pack
+        run: cargo install wasm-pack --locked
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Rust tests
+        run: cargo test --manifest-path packages/core-rust/Cargo.toml
+
+      - name: Build WASM packages
+        run: pnpm --filter gaesup-state-core-rust run build
+
+      - name: Core tests
+        run: pnpm --filter gaesup-state run test
+
+      - name: Type check
+        run: pnpm --filter gaesup-state run type-check
+
+      - name: Build core package
+        run: pnpm --filter gaesup-state run build
+
+      - name: Validate monorepo container contracts
+        run: pnpm run example:monorepo
+
+      - name: npm package dry-run
+        run: pnpm run npm:check

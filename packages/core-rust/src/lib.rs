@@ -5,8 +5,9 @@ use wasm_bindgen::prelude::*;
 
 mod compatibility;
 mod container;
-mod render_math;
+mod machine;
 mod render;
+mod render_math;
 mod store;
 
 #[wasm_bindgen]
@@ -29,7 +30,11 @@ pub(crate) fn next_id(prefix: &str) -> String {
     ID_COUNTER.with(|counter| {
         let mut counter = counter.borrow_mut();
         *counter += 1;
-        format!("{prefix}_{}_{}", js_sys::Date::now() as u64, *counter)
+        #[cfg(target_arch = "wasm32")]
+        let now = js_sys::Date::now() as u64;
+        #[cfg(not(target_arch = "wasm32"))]
+        let now = chrono::Utc::now().timestamp_millis() as u64;
+        format!("{prefix}_{now}_{}", *counter)
     })
 }
 
@@ -43,7 +48,8 @@ pub(crate) fn from_js(value: JsValue) -> Result<Value, JsValue> {
 }
 
 pub(crate) fn to_js<T: Serialize + ?Sized>(value: &T) -> Result<JsValue, JsValue> {
-    value.serialize(&serde_wasm_bindgen::Serializer::json_compatible())
+    value
+        .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
         .map_err(|error| js_error(&format!("Serialization error: {error}")))
 }
 

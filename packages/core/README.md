@@ -76,6 +76,46 @@ pipe.delete('draft.error');
 await pipe.flush();
 ```
 
+## Deployment Guard
+
+Use deployment contracts when several WASM containers are deployed as page slots and must not drift apart.
+
+```typescript
+import { CompatibilityGuard } from 'gaesup-state';
+
+const guard = new CompatibilityGuard({
+  deployment: {
+    releaseId: 'web-2026-04-28.1',
+    strictRelease: true,
+    slots: [
+      {
+        slot: 'header',
+        packageName: 'shop-header',
+        version: '1.4.0',
+        releaseId: 'web-2026-04-28.1',
+        slotVersion: '1.4.0',
+        contractVersion: '1.1.0'
+      }
+    ]
+  }
+});
+
+const result = guard.validate({
+  manifestVersion: '1.0',
+  name: 'shop-body',
+  version: '1.8.0',
+  deployment: {
+    slot: 'body',
+    releaseId: 'web-2026-04-28.1',
+    requires: [
+      { slot: 'header', slotVersion: '^1.4.0', contractVersion: '^1.1.0' }
+    ]
+  }
+});
+```
+
+If a body container expects a newer header contract, validation fails before the shared store is connected.
+
 ## Low-Level Store API
 
 ```typescript
@@ -108,6 +148,7 @@ See the repository docs:
 - Auto store: `docs/auto-store.md`
 - Resource/query: `docs/resource-query.md`
 - Dispatch pipeline: `docs/pipeline.md`
+- Deployment guard: `docs/deployment-guard.md`
 - Performance notes: `docs/performance.md`
 - Render runtime: `docs/render-runtime.md`
 
