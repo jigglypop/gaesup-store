@@ -1,5 +1,6 @@
+import { createHash } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -19,6 +20,13 @@ if (!previousSlot) {
   process.exit(1);
 }
 
+await verifySlotArtifact(previousSlot);
+
+if (args.dryRun) {
+  console.log(`VERIFIED_ROLLBACK ${args.slot} -> ${previousSlot.artifactPath || previousSlot.version}`);
+  process.exit(0);
+}
+
 registry.slots ||= {};
 registry.slots[args.slot] = {
   ...previousSlot,
@@ -36,6 +44,7 @@ function parseArgs(items) {
     if (item === '--slot') output.slot = items[++index];
     if (item === '--registry') output.registry = items[++index];
     if (item === '--previous-registry') output.previousRegistry = items[++index];
+    if (item === '--dry-run') output.dryRun = true;
   }
   return output;
 }
@@ -43,4 +52,42 @@ function parseArgs(items) {
 async function readJson(relativePath) {
   const raw = await readFile(join(root, relativePath), 'utf8');
   return JSON.parse(raw);
+}
+
+async function verifySlotArtifact(slot) {
+  if (!slot.artifactPath || !slot.sha256) {
+    throw new Error(`Previous slot ${slot.slot || args.slot} does not declare artifactPath and sha256`);
+  }
+
+  await verifyFileHash(slot.artifactPath, slot.sha256, 'artifact');
+
+  if (slot.manifestPath && slot.manifestSha256) {
+    await verifyFileHash(slot.manifestPath, slot.manifestSha256, 'manifest');
+  }
+}
+
+async function verifyFileHash(relativePath, expectedHash, label) {
+  const bytes = await readFile(resolveRegistryArtifactPath(relativePath));
+  const actualHash = createHash('sha256').update(bytes).digest('hex');
+  const expected = normalizeHash(expectedHash);
+  if (actualHash !== expected) {
+    throw new Error(`Rollback ${label} hash mismatch for ${relativePath}: expected ${expected}, got ${actualHash}`);
+  }
+}
+
+function normalizeHash(value) {
+  return String(value || '').trim().toLowerCase().replace(/^sha256:/, '');
+}
+
+function resolveRegistryArtifactPath(relativePath) {
+  const artifactsRoot = resolve(root, 'dist', 'artifacts');
+  const resolved = resolve(root, relativePath);
+  if (!isInside(resolved, artifactsRoot)) {
+    throw new Error(`Rollback artifact path must stay inside dist/artifacts: ${relativePath}`);
+  }
+  return resolved;
+}
+
+function isInside(target, parent) {
+  return target === parent || target.startsWith(`${parent}${sep}`);
 }

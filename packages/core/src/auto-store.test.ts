@@ -516,6 +516,13 @@ describe('store runtime policies', () => {
     GaesupCore.clearStoreRuntimePolicy('orders');
     GaesupCore.clearStoreRuntimePolicy('orders-v2');
     GaesupCore.clearStoreRuntimePolicy('orders-shadow');
+    GaesupCore.clearStoreRuntimePolicy('orders-migrating');
+    GaesupCore.clearStoreRuntimePolicy('orders-migrate-runner');
+    GaesupCore.clearStoreRuntimePolicy('orders-migrate-failed');
+    GaesupCore.clearStoreRuntimePolicy('orders-readonly-auto');
+    GaesupCore.clearStoreRuntimePolicy('orders-shadow-auto');
+    GaesupCore.clearStoreRuntimePolicy('orders-migrate-auto');
+    GaesupCore.clearStoreRuntimePolicy('orders-dual-auto');
   });
 
   it('rejects writes for readonly stores', async () => {
@@ -556,6 +563,178 @@ describe('store runtime policies', () => {
     expect(calls.stores.get('orders').count).toBe(2);
     expect(calls.stores.get('orders-v2').count).toBe(2);
     expect(calls.dispatches.map((item) => item.storeId)).toEqual(['orders', 'orders-v2']);
+  });
+
+  it('blocks shared store reads and writes until migrate policy is completed', async () => {
+    await GaesupCore.createStore('orders-migrating', { count: 1 });
+    GaesupCore.setStoreRuntimePolicy({
+      storeId: 'orders-migrating',
+      policy: 'migrate'
+    });
+
+    expect(() => GaesupCore.select('orders-migrating', 'count')).toThrow('requires migration');
+    await expect(GaesupCore.dispatch('orders-migrating', 'UPDATE', {
+      path: 'count',
+      value: 2
+    })).rejects.toThrow('requires migration');
+    expect(calls.dispatches).toEqual([]);
+    expect(GaesupCore.getRuntimeTimeline().some((event) => (
+      event.type === 'runtime:error' &&
+      event.code === 'STORE_MIGRATION_REQUIRED' &&
+      event.storeId === 'orders-migrating'
+    ))).toBe(true);
+
+    GaesupCore.completeStoreMigration('orders-migrating');
+    await GaesupCore.dispatch('orders-migrating', 'UPDATE', {
+      path: 'count',
+      value: 2
+    });
+
+    expect(GaesupCore.select('orders-migrating', 'count')).toBe(2);
+  });
+
+  it('runs a migration and opens shared store access only after it succeeds', async () => {
+    await GaesupCore.createStore('orders-migrate-runner', {
+      version: 1,
+      total: 10
+    });
+    GaesupCore.setStoreRuntimePolicy({
+      storeId: 'orders-migrate-runner',
+      policy: 'migrate'
+    });
+
+    const migrated = await GaesupCore.migrateStore<{ version: number; total: number; currency?: string }>(
+      'orders-migrate-runner',
+      (state) => ({
+        ...state,
+        version: 2,
+        currency: 'USD'
+      })
+    );
+
+    expect(migrated).toEqual({
+      version: 2,
+      total: 10,
+      currency: 'USD'
+    });
+    expect(GaesupCore.select('orders-migrate-runner', 'currency')).toBe('USD');
+    expect(calls.dispatches).toEqual([
+      {
+        storeId: 'orders-migrate-runner',
+        actionType: 'SET',
+        payload: {
+          version: 2,
+          total: 10,
+          currency: 'USD'
+        }
+      }
+    ]);
+  });
+
+  it('keeps migrate stores blocked when the migration fails', async () => {
+    await GaesupCore.createStore('orders-migrate-failed', { version: 1 });
+    GaesupCore.setStoreRuntimePolicy({
+      storeId: 'orders-migrate-failed',
+      policy: 'migrate'
+    });
+
+    await expect(GaesupCore.migrateStore('orders-migrate-failed', () => {
+      throw new Error('bad migration');
+    })).rejects.toThrow('bad migration');
+
+    expect(calls.dispatches).toEqual([]);
+    expect(() => GaesupCore.select('orders-migrate-failed', 'version')).toThrow('requires migration');
+    expect(GaesupCore.getRuntimeTimeline().some((event) => (
+      event.type === 'runtime:error' &&
+      event.code === 'STORE_MIGRATION_FAILED' &&
+      event.storeId === 'orders-migrate-failed'
+    ))).toBe(true);
+  });
+
+  it('applies manifest validation store policy warnings to runtime enforcement', async () => {
+    await GaesupCore.createStore('orders-readonly-auto', { count: 1 });
+    await GaesupCore.createStore('orders-shadow-auto', { count: 1 });
+    await GaesupCore.createStore('orders-shadow-auto:shadow', { count: 10 });
+    await GaesupCore.createStore('orders-migrate-auto', { count: 1 });
+
+    GaesupCore.applyManifestStorePolicies({
+      manifestVersion: '1.0',
+      name: 'policy-widget',
+      version: '1.0.0',
+      stores: [
+        {
+          storeId: 'orders-readonly-auto',
+          schemaId: 'orders',
+          schemaVersion: '^2.0.0',
+          conflictPolicy: 'readonly'
+        },
+        {
+          storeId: 'orders-shadow-auto',
+          schemaId: 'orders',
+          schemaVersion: '^2.0.0',
+          conflictPolicy: 'shadow',
+          shadowStoreId: 'orders-shadow-auto:shadow'
+        },
+        {
+          storeId: 'orders-migrate-auto',
+          schemaId: 'orders',
+          schemaVersion: '^2.0.0',
+          conflictPolicy: 'migrate'
+        }
+      ]
+    }, {
+      valid: true,
+      errors: [],
+      isolatedStores: ['orders-shadow-auto'],
+      warnings: [
+        { code: 'STORE_SCHEMA_READONLY', message: 'readonly', severity: 'warning', target: 'orders-readonly-auto' },
+        { code: 'STORE_SCHEMA_SHADOWED', message: 'shadow', severity: 'warning', target: 'orders-shadow-auto' },
+        { code: 'STORE_SCHEMA_MIGRATION_REQUIRED', message: 'migrate', severity: 'warning', target: 'orders-migrate-auto' }
+      ]
+    });
+
+    await expect(GaesupCore.dispatch('orders-readonly-auto', 'UPDATE', {
+      path: 'count',
+      value: 2
+    })).rejects.toThrow('readonly');
+
+    await GaesupCore.dispatch('orders-shadow-auto', 'UPDATE', {
+      path: 'count',
+      value: 11
+    });
+    expect(calls.stores.get('orders-shadow-auto').count).toBe(1);
+    expect(calls.stores.get('orders-shadow-auto:shadow').count).toBe(11);
+
+    expect(() => GaesupCore.select('orders-migrate-auto', 'count')).toThrow('requires migration');
+  });
+
+  it('fails closed when dual-write validation lacks runtime target stores', () => {
+    expect(() => GaesupCore.applyManifestStorePolicies({
+      manifestVersion: '1.0',
+      name: 'dual-widget',
+      version: '1.0.0',
+      stores: [
+        {
+          storeId: 'orders-dual-auto',
+          schemaId: 'orders',
+          schemaVersion: '^2.0.0',
+          conflictPolicy: 'dual-write'
+        }
+      ]
+    }, {
+      valid: true,
+      errors: [],
+      isolatedStores: [],
+      warnings: [
+        { code: 'STORE_SCHEMA_DUAL_WRITE', message: 'dual', severity: 'warning', target: 'orders-dual-auto' }
+      ]
+    })).toThrow('dual-write policy requires runtime dualWriteStoreIds');
+
+    expect(GaesupCore.getRuntimeTimeline().some((event) => (
+      event.type === 'runtime:error' &&
+      event.code === 'STORE_DUAL_WRITE_TARGETS_MISSING' &&
+      event.storeId === 'orders-dual-auto'
+    ))).toBe(true);
   });
 });
 

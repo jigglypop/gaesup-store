@@ -15,6 +15,7 @@ Cargo.lock
 # WASM generated files
 pkg/
 *.wasm
+!examples/monorepo-containers/containers/*/container.wasm
 wasm-pack.log
 
 # Development

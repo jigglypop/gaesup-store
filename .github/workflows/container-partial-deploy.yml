@@ -94,6 +94,9 @@ jobs:
       - name: Validate container contract
         run: pnpm --filter @gaesup-example/monorepo-containers run validate:affected -- --containers '${{ matrix.container }}'
 
+      - name: Verify affected artifact
+        run: pnpm --filter @gaesup-example/monorepo-containers run deploy:affected -- --dry-run --containers '${{ matrix.container }}'
+
       - name: Update registry slot pointer
         if: github.event_name == 'push'
         run: pnpm --filter @gaesup-example/monorepo-containers run deploy:affected -- --containers '${{ matrix.container }}'

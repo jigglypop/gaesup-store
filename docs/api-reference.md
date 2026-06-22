@@ -285,6 +285,18 @@ const result = guard.validate(manifest);
 const result = CompatibilityGuard.validate(manifest, hostConfig);
 ```
 
+Store policy warnings can be applied to runtime enforcement:
+
+```typescript
+const result = guard.validate(manifest);
+
+if (result.valid) {
+  GaesupCore.applyManifestStorePolicies(manifest, result);
+}
+```
+
+This maps schema policy warnings such as `readonly`, `shadow`, and `migrate` into runtime behavior. `dual-write` requires explicit `dualWriteStoreIds`; otherwise runtime policy application fails closed.
+
 ### package dependency
 
 ```typescript

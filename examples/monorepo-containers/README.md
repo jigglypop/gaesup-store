@@ -44,8 +44,15 @@ BLOCKED body contract drift
 
 1. `main`에 merge되면 CI가 각 package의 manifest를 생성합니다.
 2. release branch에서 같은 `releaseId`를 모든 slot manifest에 주입합니다.
-3. host shell은 `release-plan.json` 또는 registry 응답으로 현재 slot 조합을 받습니다.
-4. mount 전에 `validate_manifest`를 실행합니다.
-5. 통과한 컨테이너만 shared store와 render runtime에 연결합니다.
+3. CI는 manifest의 `wasm.path`와 `wasm.sha256`이 실제 artifact와 일치하는지 dry-run으로 검증합니다.
+4. host shell은 `release-plan.json` 또는 registry 응답으로 현재 slot 조합을 받습니다.
+5. mount 전에 `validate_manifest`를 실행합니다.
+6. 통과한 컨테이너만 shared store와 render runtime에 연결합니다.
+
+Rollback also verifies the previous registry slot artifact hash before rewriting the slot pointer:
+
+```bash
+pnpm --filter @gaesup-example/monorepo-containers run rollback -- --slot body --previous-registry dist/registry.json --dry-run
+```
 
 이렇게 하면 `body`만 새로 올라가고 `header`가 예전 계약인 상태를 실행 전에 막을 수 있습니다.

@@ -58,6 +58,8 @@ export interface StoreDependencyContract {
   compatRange?: string;
   required?: boolean;
   conflictPolicy?: DependencyConflictPolicy;
+  shadowStoreId?: string;
+  dualWriteStoreIds?: string[];
 }
 
 export interface AcceleratorDependencyContract {
@@ -215,6 +217,11 @@ export interface StoreRuntimePolicy {
   policy: DependencyConflictPolicy;
   shadowStoreId?: string;
   dualWriteStoreIds?: string[];
+  migrationCompleted?: boolean;
+}
+
+export interface ApplyManifestStorePolicyOptions {
+  resolveIsolatedStoreId?: (store: StoreDependencyContract, policy: 'isolate' | 'shadow') => string;
 }
 
 let ready: Promise<void> | null = null;
@@ -418,6 +425,110 @@ export const GaesupCore = {
       });
     }
   },
+  applyManifestStorePolicies(
+    manifest: ContainerPackageManifest,
+    validation: ValidationResult,
+    options: ApplyManifestStorePolicyOptions = {}
+  ) {
+    if (!validation.valid) {
+      const error = new Error(validation.errors[0]?.message || `Manifest ${manifest.name} failed validation`);
+      pushRuntimeEvent({
+        type: 'runtime:error',
+        code: validation.errors[0]?.code || 'MANIFEST_VALIDATION_FAILED',
+        message: error.message,
+        details: { manifest: manifest.name }
+      });
+      throw error;
+    }
+
+    for (const store of manifest.stores || []) {
+      const code = runtimePolicyIssueCode(validation, store.storeId);
+      if (!code) continue;
+
+      if (code === 'STORE_SCHEMA_READONLY') {
+        this.setStoreRuntimePolicy({ storeId: store.storeId, policy: 'readonly' });
+        continue;
+      }
+
+      if (code === 'STORE_SCHEMA_MIGRATION_REQUIRED') {
+        this.setStoreRuntimePolicy({ storeId: store.storeId, policy: 'migrate', migrationCompleted: false });
+        continue;
+      }
+
+      if (code === 'STORE_SCHEMA_ISOLATED' || code === 'STORE_SCHEMA_SHADOWED') {
+        const policy = code === 'STORE_SCHEMA_ISOLATED' ? 'isolate' : 'shadow';
+        this.setStoreRuntimePolicy({
+          storeId: store.storeId,
+          policy,
+          shadowStoreId: store.shadowStoreId || options.resolveIsolatedStoreId?.(store, policy) || `${store.storeId}:${policy}`
+        });
+        continue;
+      }
+
+      if (code === 'STORE_SCHEMA_DUAL_WRITE') {
+        if (!store.dualWriteStoreIds?.length) {
+          const message = `Store ${store.storeId} dual-write policy requires runtime dualWriteStoreIds`;
+          pushRuntimeEvent({
+            type: 'runtime:error',
+            storeId: store.storeId,
+            code: 'STORE_DUAL_WRITE_TARGETS_MISSING',
+            message
+          });
+          throw new Error(message);
+        }
+        this.setStoreRuntimePolicy({
+          storeId: store.storeId,
+          policy: 'dual-write',
+          dualWriteStoreIds: store.dualWriteStoreIds
+        });
+      }
+    }
+  },
+  completeStoreMigration(storeId: string) {
+    const policy = storeRuntimePolicies.get(storeId);
+    if (!policy || policy.policy !== 'migrate') {
+      throw new Error(`Store ${storeId} does not have an active migrate policy`);
+    }
+    storeRuntimePolicies.set(storeId, {
+      ...policy,
+      migrationCompleted: true
+    });
+    pushRuntimeEvent({
+      type: 'store:attached',
+      storeId,
+      details: { policy: 'migrate', migrationCompleted: true }
+    });
+  },
+  async migrateStore<TState = unknown>(
+    storeId: string,
+    migration: (state: TState) => TState | Promise<TState>
+  ) {
+    await ensureReady();
+    const policy = storeRuntimePolicies.get(storeId);
+    if (!policy || policy.policy !== 'migrate') {
+      throw new Error(`Store ${storeId} does not have an active migrate policy`);
+    }
+    if (policy.migrationCompleted === true) {
+      throw new Error(`Store ${storeId} migration is already completed`);
+    }
+
+    try {
+      const current = wasm.select(storeId, '') as TState;
+      const next = await migration(clonePlain(current));
+      await wasm.dispatch(storeId, 'SET', clonePlain(next));
+      this.completeStoreMigration(storeId);
+      return next;
+    } catch (error) {
+      const resolved = error instanceof Error ? error : new Error(String(error));
+      pushRuntimeEvent({
+        type: 'runtime:error',
+        storeId,
+        code: 'STORE_MIGRATION_FAILED',
+        message: resolved.message
+      });
+      throw resolved;
+    }
+  },
   clearStoreRuntimePolicy(storeId: string) {
     storeRuntimePolicies.delete(storeId);
   },
@@ -452,8 +563,22 @@ export const GaesupCore = {
 
 const callbackRegistry = new Map<string, (state?: any) => void>();
 
+function runtimePolicyIssueCode(validation: ValidationResult, storeId: string) {
+  const runtimePolicyCodes = new Set([
+    'STORE_SCHEMA_ISOLATED',
+    'STORE_SCHEMA_SHADOWED',
+    'STORE_SCHEMA_READONLY',
+    'STORE_SCHEMA_MIGRATION_REQUIRED',
+    'STORE_SCHEMA_DUAL_WRITE'
+  ]);
+  return [...validation.warnings, ...validation.errors]
+    .find((issue) => issue.target === storeId && runtimePolicyCodes.has(issue.code))
+    ?.code;
+}
+
 function resolveReadStoreId(storeId: string) {
   const policy = storeRuntimePolicies.get(storeId);
+  assertStoreMigrationCompleted(storeId, policy, 'read');
   if ((policy?.policy === 'isolate' || policy?.policy === 'shadow') && policy.shadowStoreId) {
     return policy.shadowStoreId;
   }
@@ -462,10 +587,29 @@ function resolveReadStoreId(storeId: string) {
 
 function resolveWriteStoreId(storeId: string) {
   const policy = storeRuntimePolicies.get(storeId);
+  assertStoreMigrationCompleted(storeId, policy, 'write');
   if ((policy?.policy === 'isolate' || policy?.policy === 'shadow') && policy.shadowStoreId) {
     return policy.shadowStoreId;
   }
   return storeId;
+}
+
+function assertStoreMigrationCompleted(
+  storeId: string,
+  policy: StoreRuntimePolicy | undefined,
+  operation: 'read' | 'write'
+) {
+  if (policy?.policy !== 'migrate' || policy.migrationCompleted === true) return;
+
+  const error = new Error(`Store ${storeId} requires migration before shared store ${operation}`);
+  pushRuntimeEvent({
+    type: 'runtime:error',
+    storeId,
+    code: 'STORE_MIGRATION_REQUIRED',
+    message: error.message,
+    details: { operation }
+  });
+  throw error;
 }
 
 function assertStoreWriteAllowed(storeId: string, actionType: string) {

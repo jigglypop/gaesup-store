@@ -14,7 +14,7 @@ const allContainers = readdirSync(containersDir, { withFileTypes: true })
 const args = parseArgs(process.argv.slice(2));
 const base = args.base || process.env.BASE_SHA || defaultBase();
 const head = args.head || process.env.HEAD_SHA || 'HEAD';
-const files = changedFiles(base, head);
+const files = args.files.length > 0 ? args.files : changedFiles(base, head);
 const changed = new Set();
 let validateAll = false;
 
@@ -26,11 +26,7 @@ for (const file of files) {
     continue;
   }
 
-  if (
-    normalized === 'examples/monorepo-containers/release-plan.json' ||
-    normalized === 'examples/monorepo-containers/scripts/validate-affected-deployment.mjs' ||
-    normalized === 'examples/monorepo-containers/scripts/list-changed-containers.mjs'
-  ) {
+  if (affectsAllContainerContracts(normalized)) {
     validateAll = true;
   }
 }
@@ -76,11 +72,41 @@ function defaultBase() {
 }
 
 function parseArgs(items) {
-  const parsed = {};
+  const parsed = { files: [] };
   for (let index = 0; index < items.length; index += 1) {
     const item = items[index];
     if (item === '--base') parsed.base = items[++index];
     if (item === '--head') parsed.head = items[++index];
+    if (item === '--files') parsed.files = parseFiles(items[++index] || '');
   }
   return parsed;
+}
+
+function parseFiles(value) {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) return parsed.map(String).filter(Boolean);
+  } catch {
+    // Fall through to newline/comma parsing.
+  }
+  return value
+    .replace(/^\[/, '')
+    .replace(/\]$/, '')
+    .split(/[\r\n,]+/)
+    .map((item) => item.trim().replace(/^['"]|['"]$/g, ''))
+    .filter(Boolean);
+}
+
+function affectsAllContainerContracts(normalizedPath) {
+  return (
+    normalizedPath === '.github/workflows/container-partial-deploy.yml' ||
+    normalizedPath === 'examples/monorepo-containers/package.json' ||
+    normalizedPath === 'examples/monorepo-containers/release-plan.json' ||
+    normalizedPath.startsWith('examples/monorepo-containers/scripts/') ||
+    normalizedPath.startsWith('packages/core/src/') ||
+    normalizedPath.startsWith('packages/core/package.json') ||
+    normalizedPath.startsWith('packages/core-rust/src/') ||
+    normalizedPath.startsWith('packages/core-rust/Cargo.toml')
+  );
 }

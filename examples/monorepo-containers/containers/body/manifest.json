@@ -3,6 +3,10 @@
   "name": "@shop/body",
   "version": "1.8.0",
   "runtime": "wasm",
+  "wasm": {
+    "path": "container.wasm",
+    "sha256": "sha256:ccf59f0f7a7625ee380ed228905aadfa11072ac14cea1c53d1e7f3953d4d48c6"
+  },
   "gaesup": {
     "abiVersion": "^1.0.0"
   },

@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
-const containers = parseContainers(process.argv.slice(2));
+const args = parseArgs(process.argv.slice(2));
+const containers = parseContainers(args);
 const releasePlan = await readJson('release-plan.json');
 const registryPath = 'dist/registry.json';
 const registry = await readJsonIfExists(registryPath, {
@@ -23,11 +24,21 @@ for (const container of containers) {
   const manifestRaw = await readFile(join(root, manifestPath));
   const manifest = JSON.parse(manifestRaw.toString('utf8'));
   const slot = manifest.deployment?.slot || container;
-  const sha256 = createHash('sha256').update(manifestRaw).digest('hex');
-  const artifactPath = `dist/artifacts/${slot}/${manifest.version}/manifest.json`;
-  const artifactFile = join(root, artifactPath);
-  await mkdir(dirname(artifactFile), { recursive: true });
-  await writeFile(artifactFile, manifestRaw);
+  const manifestSha256 = createHash('sha256').update(manifestRaw).digest('hex');
+  const artifact = await verifyDeclaredArtifact(container, manifest);
+
+  if (args.dryRun) {
+    console.log(`VERIFIED ${slot} -> ${artifact.fileName} sha256:${artifact.sha256}`);
+    continue;
+  }
+
+  const manifestArtifactPath = registryArtifactPath(slot, manifest.version, 'manifest.json');
+  const manifestArtifactFile = resolveInsideRoot(manifestArtifactPath);
+  const wasmArtifactPath = registryArtifactPath(slot, manifest.version, artifact.fileName);
+  const wasmArtifactFile = resolveInsideRoot(wasmArtifactPath);
+  await mkdir(dirname(manifestArtifactFile), { recursive: true });
+  await writeFile(manifestArtifactFile, manifestRaw);
+  await writeFile(wasmArtifactFile, artifact.bytes);
 
   registry.slots[slot] = {
     slot,
@@ -36,22 +47,35 @@ for (const container of containers) {
     releaseId: manifest.deployment?.releaseId || releasePlan.releaseId,
     slotVersion: manifest.deployment?.slotVersion || manifest.version,
     contractVersion: manifest.deployment?.contractVersion,
-    artifactPath,
-    sha256,
+    manifestPath: manifestArtifactPath,
+    manifestSha256,
+    artifactPath: wasmArtifactPath,
+    sha256: artifact.sha256,
     updatedAt: new Date().toISOString()
   };
 
-  console.log(`UPDATED ${slot} -> ${artifactPath} sha256:${sha256}`);
+  console.log(`UPDATED ${slot} -> ${wasmArtifactPath} sha256:${artifact.sha256}`);
 }
 
-registry.releaseId = releasePlan.releaseId;
-registry.updatedAt = new Date().toISOString();
-await mkdir(join(root, 'dist'), { recursive: true });
-await writeFile(join(root, registryPath), `${JSON.stringify(registry, null, 2)}\n`);
+if (!args.dryRun) {
+  registry.releaseId = releasePlan.releaseId;
+  registry.updatedAt = new Date().toISOString();
+  await mkdir(join(root, 'dist'), { recursive: true });
+  await writeFile(join(root, registryPath), `${JSON.stringify(registry, null, 2)}\n`);
+}
+
+function parseArgs(items) {
+  const output = { dryRun: false, containers: '' };
+  for (let index = 0; index < items.length; index += 1) {
+    const item = items[index];
+    if (item === '--containers') output.containers = items[++index] || '';
+    if (item === '--dry-run') output.dryRun = true;
+  }
+  return output;
+}
 
 function parseContainers(args) {
-  const fromFlag = args.findIndex((arg) => arg === '--containers');
-  if (fromFlag >= 0) return parseList(args[fromFlag + 1] || '');
+  if (args.containers) return parseList(args.containers);
   return parseList(process.env.CONTAINERS || process.env.AFFECTED_CONTAINERS || '');
 }
 
@@ -80,4 +104,75 @@ async function readJsonIfExists(relativePath, fallback) {
   } catch {
     return fallback;
   }
+}
+
+async function verifyDeclaredArtifact(container, manifest) {
+  if (manifest.runtime !== 'wasm' && manifest.runtime !== 'wasm-worker') {
+    throw new Error(`Container ${container} must declare a wasm runtime artifact before registry update`);
+  }
+
+  const declaredPath = manifest.wasm?.path || manifest.entry?.path || manifest.entry?.url;
+  const declaredHash = normalizeHash(manifest.wasm?.sha256 || manifest.entry?.sha256);
+  if (!declaredPath || !declaredHash) {
+    throw new Error(`Container ${container} must declare wasm.path and wasm.sha256 before registry update`);
+  }
+  const artifactFile = resolveContainerArtifactPath(container, declaredPath);
+  const bytes = await readFile(artifactFile);
+  const actualHash = createHash('sha256').update(bytes).digest('hex');
+  if (actualHash !== declaredHash) {
+    throw new Error(`Container ${container} artifact hash mismatch: expected ${declaredHash}, got ${actualHash}`);
+  }
+
+  return {
+    bytes,
+    sha256: actualHash,
+    fileName: safePathSegment(basename(declaredPath), 'artifact filename')
+  };
+}
+
+function normalizeHash(value) {
+  return String(value || '').trim().toLowerCase().replace(/^sha256:/, '');
+}
+
+function resolveContainerArtifactPath(container, declaredPath) {
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(declaredPath)) {
+    throw new Error(`Container ${container} artifact path must be a local path inside the container directory`);
+  }
+
+  const containerDir = resolve(root, 'containers', container);
+  const artifactPath = resolve(containerDir, declaredPath);
+  if (!isInside(artifactPath, containerDir)) {
+    throw new Error(`Container ${container} artifact path must stay inside the container directory`);
+  }
+  return artifactPath;
+}
+
+function registryArtifactPath(slot, version, fileName) {
+  return [
+    'dist',
+    'artifacts',
+    safePathSegment(slot, 'slot'),
+    safePathSegment(version, 'version'),
+    safePathSegment(fileName, 'artifact filename')
+  ].join('/');
+}
+
+function safePathSegment(value, label) {
+  const segment = String(value || '').trim();
+  if (!segment || segment === '.' || segment === '..' || /[\\/]/.test(segment)) {
+    throw new Error(`Invalid ${label} path segment: ${value}`);
+  }
+  return segment;
+}
+
+function resolveInsideRoot(relativePath) {
+  const resolved = resolve(root, relativePath);
+  if (!isInside(resolved, root)) {
+    throw new Error(`Path must stay inside monorepo container root: ${relativePath}`);
+  }
+  return resolved;
+}
+
+function isInside(target, parent) {
+  return target === parent || target.startsWith(`${parent}${sep}`);
 }

@@ -102,7 +102,18 @@ For WASM:
 }
 ```
 
-The host should verify `sha256` before execution.
+The host should verify `sha256` before execution. In monorepo/container CI, local WASM artifacts can also be declared with:
+
+```json
+{
+  "wasm": {
+    "path": "container.wasm",
+    "sha256": "sha256:..."
+  }
+}
+```
+
+Registry slot updates must fail closed when the declared artifact file is missing or its hash does not match.
 
 ## Dependencies
 

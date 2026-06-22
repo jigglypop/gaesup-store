@@ -134,7 +134,7 @@ Content-Security-Policy:
 - schema가 맞으면 attach한다.
 - 맞지 않으면 기본적으로 `reject`한다.
 - `isolate`는 격리 store를 사용한다.
-- `migrate`는 attach 전에 migration을 완료해야 한다.
+- `migrate`는 attach 전에 migration을 완료해야 한다. 런타임은 migration 완료 표시 전 공유 store read/write를 `STORE_MIGRATION_REQUIRED`로 거부한다. `GaesupCore.migrateStore()` migration 함수가 실패하면 `STORE_MIGRATION_FAILED`를 남기고 store는 계속 차단 상태로 유지된다.
 - `readonly`는 read만 허용하고 write를 거부한다.
 - `shadow`는 copied state에서 preview/testing 용도로 실행한다.
 - `dual-write`는 old/new schema에 write하는 기간을 명시적으로 추적한다.
