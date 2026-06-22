@@ -182,6 +182,7 @@ pub fn garbage_collect() {
 pub fn dispatch(store_id: &str, action_type: &str, payload: JsValue) -> Result<JsValue, JsValue> {
     let start = js_sys::Date::now();
     let payload = from_js(payload)?;
+    let changed_paths = changed_paths_for_action(action_type, &payload);
 
     let (next_state, notifications) = STORES.with(|stores| {
         let mut stores = stores.borrow_mut();
@@ -197,12 +198,30 @@ pub fn dispatch(store_id: &str, action_type: &str, payload: JsValue) -> Result<J
         store.metrics.total_updates += 1;
         store.metrics.total_dispatches += 1;
         store.metrics.dispatch_time_total += js_sys::Date::now() - start;
-        let notifications = collect_notifications(store);
+        let notifications = collect_notifications(store, &changed_paths);
         Ok::<(Value, Vec<(String, js_sys::Function)>), JsValue>((next_state, notifications))
     })?;
 
     notify_subscribers(&next_state, &notifications)?;
     to_js(&next_state)
+}
+
+#[wasm_bindgen]
+pub fn dispatch_with_metadata(
+    store_id: &str,
+    action_type: &str,
+    payload: JsValue,
+) -> Result<JsValue, JsValue> {
+    let payload = from_js(payload)?;
+    let changed_paths = changed_paths_for_action(action_type, &payload);
+    let payload_js = to_js(&payload)?;
+    let state = dispatch(store_id, action_type, payload_js)?;
+    let state_value = from_js(state)?;
+
+    to_js(&serde_json::json!({
+        "state": state_value,
+        "changedPaths": changed_paths,
+    }))
 }
 
 #[wasm_bindgen]
@@ -231,7 +250,7 @@ pub fn dispatch_counter(
         store.metrics.total_updates += 1;
         store.metrics.total_dispatches += 1;
         store.metrics.dispatch_time_total += js_sys::Date::now() - start;
-        let notifications = collect_notifications(store);
+        let notifications = collect_notifications(store, &["count".to_string()]);
         Ok::<(Value, Vec<(String, js_sys::Function)>), JsValue>((next, notifications))
     })?;
 
@@ -266,7 +285,7 @@ pub fn dispatch_counter_batch(
         store.metrics.total_updates += count;
         store.metrics.total_dispatches += count;
         store.metrics.dispatch_time_total += js_sys::Date::now() - start;
-        let notifications = collect_notifications(store);
+        let notifications = collect_notifications(store, &["count".to_string()]);
         Ok::<(Value, Vec<(String, js_sys::Function)>), JsValue>((next, notifications))
     })?;
 
@@ -504,7 +523,7 @@ pub fn restore_snapshot(store_id: &str, snapshot_id: &str) -> Result<JsValue, Js
         store.state = snapshot.clone();
         store.refresh_fast_count();
         store.sync_counter_lane_from_store();
-        let notifications = collect_notifications(store);
+        let notifications = collect_notifications(store, &["".to_string()]);
         Ok::<(Value, Vec<(String, js_sys::Function)>), JsValue>((snapshot, notifications))
     })?;
 
@@ -852,12 +871,88 @@ fn delete_path(state: &mut Value, path: &str) {
     }
 }
 
-fn collect_notifications(store: &Store) -> Vec<(String, js_sys::Function)> {
+fn collect_notifications(store: &Store, changed_paths: &[String]) -> Vec<(String, js_sys::Function)> {
     store
         .subscriptions
         .values()
+        .filter(|subscription| should_notify_path(&subscription.path, changed_paths))
         .map(|subscription| (subscription.path.clone(), subscription.callback.clone()))
         .collect()
+}
+
+fn should_notify_path(subscription_path: &str, changed_paths: &[String]) -> bool {
+    if subscription_path.is_empty() || changed_paths.is_empty() {
+        return true;
+    }
+    changed_paths
+        .iter()
+        .any(|changed_path| paths_intersect(subscription_path, changed_path))
+}
+
+fn paths_intersect(left: &str, right: &str) -> bool {
+    if left.is_empty() || right.is_empty() || left == right {
+        return true;
+    }
+    is_path_ancestor(left, right) || is_path_ancestor(right, left)
+}
+
+fn is_path_ancestor(parent: &str, child: &str) -> bool {
+    child
+        .strip_prefix(parent)
+        .is_some_and(|suffix| suffix.starts_with('.'))
+}
+
+fn changed_paths_for_action(action_type: &str, payload: &Value) -> Vec<String> {
+    match action_type {
+        "SET" => vec!["".to_string()],
+        "MERGE" => payload
+            .as_object()
+            .map(|object| object.keys().cloned().collect())
+            .unwrap_or_else(|| vec!["".to_string()]),
+        "UPDATE" => payload
+            .get("path")
+            .and_then(Value::as_str)
+            .map(|path| vec![path.to_string()])
+            .unwrap_or_else(|| vec!["".to_string()]),
+        "DELETE" => payload
+            .as_str()
+            .or_else(|| payload.get("path").and_then(Value::as_str))
+            .map(|path| vec![path.to_string()])
+            .unwrap_or_else(|| vec!["".to_string()]),
+        "BATCH" => payload
+            .as_array()
+            .map(|updates| {
+                normalize_changed_paths(
+                    updates
+                        .iter()
+                        .flat_map(|update| {
+                            let nested_action_type = update
+                                .get("actionType")
+                                .or_else(|| update.get("type"))
+                                .and_then(Value::as_str)
+                                .unwrap_or("UPDATE");
+                            let nested_payload = update
+                                .get("payload")
+                                .unwrap_or(update);
+                            changed_paths_for_action(nested_action_type, nested_payload)
+                        })
+                        .collect(),
+                )
+            })
+            .unwrap_or_else(|| vec!["".to_string()]),
+        _ => vec!["".to_string()],
+    }
+}
+
+fn normalize_changed_paths(paths: Vec<String>) -> Vec<String> {
+    let mut output: Vec<String> = Vec::new();
+    for path in paths {
+        if output.iter().any(|existing| paths_intersect(existing, &path)) {
+            continue;
+        }
+        output.push(path);
+    }
+    output
 }
 
 fn notify_subscribers(
@@ -1001,5 +1096,43 @@ mod tests {
     fn select_supports_object_and_array_paths() {
         let state = json!({ "users": [{ "name": "A" }, { "name": "B" }] });
         assert_eq!(select_value(&state, "users.1.name").unwrap(), "B");
+    }
+
+    #[test]
+    fn changed_paths_are_derived_from_update_delete_and_merge() {
+        assert_eq!(
+            changed_paths_for_action("UPDATE", &json!({ "path": "user.name", "value": "B" })),
+            vec!["user.name".to_string()]
+        );
+        assert_eq!(
+            changed_paths_for_action("DELETE", &json!({ "path": "user.age" })),
+            vec!["user.age".to_string()]
+        );
+        assert_eq!(
+            changed_paths_for_action("MERGE", &json!({ "count": 2, "user": { "name": "B" } })),
+            vec!["count".to_string(), "user".to_string()]
+        );
+    }
+
+    #[test]
+    fn changed_paths_are_collapsed_for_batches() {
+        let paths = changed_paths_for_action(
+            "BATCH",
+            &json!([
+                { "actionType": "UPDATE", "payload": { "path": "user.name", "value": "B" } },
+                { "actionType": "UPDATE", "payload": { "path": "user.name.first", "value": "Bee" } },
+                { "actionType": "DELETE", "payload": { "path": "cart.items.0" } }
+            ]),
+        );
+
+        assert_eq!(paths, vec!["user.name".to_string(), "cart.items.0".to_string()]);
+    }
+
+    #[test]
+    fn subscription_paths_match_changed_descendants_and_ancestors() {
+        assert!(should_notify_path("user", &["user.name".to_string()]));
+        assert!(should_notify_path("user.name.first", &["user.name".to_string()]));
+        assert!(!should_notify_path("cart", &["user.name".to_string()]));
+        assert!(should_notify_path("", &["user.name".to_string()]));
     }
 }

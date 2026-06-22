@@ -16,13 +16,16 @@ manifest loaded
 ## ??
 
 ```typescript
-const manager = new ContainerManager();
+const manager = new DemoContainerManager();
 
 const container = await manager.createContainer({
   name: 'orders-widget',
+  runtime: 'demo',
   initialState: { ready: true }
 });
 ```
+
+`ContainerManager` is only the in-memory/demo lifecycle path. It does not attach external WASM artifacts. A container with `runtime: 'wasm'`, `runtime: 'wasm-worker'`, `runtime: 'worker'`, or `runtime: 'iframe'` is rejected with `CONTAINER_RUNTIME_REQUIRES_SANDBOX`; use `MicroSandboxRuntime` or `FrontendSandboxOrchestrator` so artifact hash, signature, imports, permissions, and isolation are enforced before attach.
 
 ?? ???? container id? ???? registry? ?????.
 

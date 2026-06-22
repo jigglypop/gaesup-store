@@ -313,10 +313,8 @@ describe('Multi-Framework Integration Tests', () => {
       });
       
       await GaesupCore.persist_store(STORE_ID, storageKey);
-      
       // 스토어 정리
       await GaesupCore.cleanupStore(STORE_ID);
-      
       // 새 스토어 생성 및 복원
       await GaesupCore.createStore(STORE_ID, {});
       await GaesupCore.hydrate_store(STORE_ID, storageKey);

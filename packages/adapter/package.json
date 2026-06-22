@@ -39,9 +39,9 @@
   "scripts": {
     "build": "vite build && tsc --emitDeclarationOnly",
     "dev": "vite build --watch",
-    "test": "vitest",
-    "typecheck": "tsc --noEmit",
-    "type-check": "tsc --noEmit",
+    "test": "node --max-old-space-size=4096 ../../node_modules/vitest/vitest.mjs",
+    "typecheck": "node --max-old-space-size=4096 ../../node_modules/typescript/bin/tsc --noEmit",
+    "type-check": "node --max-old-space-size=4096 ../../node_modules/typescript/bin/tsc --noEmit",
     "clean": "rm -rf dist",
     "pack:dry": "pnpm run build && npm pack --dry-run"
   },

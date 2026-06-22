@@ -16,7 +16,17 @@ export interface SandboxArtifactEntry {
   bytes?: ArrayBuffer | ArrayBufferView;
   html?: string;
   sha256?: string;
+  signature?: SandboxArtifactSignature;
   entrypoint?: string;
+}
+
+export interface SandboxArtifactSignature {
+  algorithm: 'RSASSA-PKCS1-v1_5' | 'RSA-PSS' | 'ECDSA';
+  hash?: 'SHA-256' | 'SHA-384' | 'SHA-512';
+  publicKeyJwk: JsonWebKey;
+  signature: string;
+  saltLength?: number;
+  namedCurve?: 'P-256' | 'P-384' | 'P-521';
 }
 
 export interface SandboxPermissionContract {
@@ -50,6 +60,7 @@ export interface MicroSandboxManifest {
   wasm?: {
     entrypoint?: string;
     sha256?: string;
+    signature?: SandboxArtifactSignature;
     size?: number;
   };
   allowedImports?: string[];
@@ -92,7 +103,15 @@ export interface MicroSandboxRuntimeOptions {
   createWorker?: (scriptUrl: string, options?: WorkerOptions) => Worker;
   now?: () => number;
   allowUnsignedArtifacts?: boolean;
+  capabilities?: SandboxCapabilityRegistry;
 }
+
+export type SandboxCapabilityRegistry = Record<string, SandboxCapabilityDescriptor>;
+
+export type SandboxCapabilityDescriptor =
+  | { kind: 'clock-ms' }
+  | { kind: 'const-i32'; value: number }
+  | { kind: 'deny'; code?: string; message?: string };
 
 export interface WasmSandboxStartResult {
   containerId: string;
@@ -311,6 +330,7 @@ export class MicroSandboxRuntime {
     await verifyArtifactHash(wasmBytes, expectedHash, {
       requireHash: this.options.allowUnsignedArtifacts !== true
     });
+    await verifyArtifactSignature(wasmBytes, manifest.entry?.signature || manifest.wasm?.signature);
     this.emit({
       type: 'artifact:verified',
       containerId,
@@ -349,6 +369,7 @@ export class MicroSandboxRuntime {
       wasmBytes: toOwnedArrayBuffer(wasmBytes),
       allowedImports: manifest.allowedImports || [],
       permissions: manifest.permissions || {},
+      capabilities: this.options.capabilities || {},
       maxMemoryBytes: manifest.sandbox?.maxMemoryBytes
     });
 
@@ -454,6 +475,39 @@ export async function verifyArtifactHash(
   return actual;
 }
 
+export async function verifyArtifactSignature(
+  input: ArrayBuffer | ArrayBufferView,
+  signature?: SandboxArtifactSignature
+) {
+  if (!signature) return undefined;
+
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle) {
+    throw new SandboxRuntimeError('CRYPTO_UNAVAILABLE', 'crypto.subtle is required to verify sandbox artifact signatures');
+  }
+
+  const hash = signature.hash || 'SHA-256';
+  const algorithm = signatureAlgorithm(signature, hash);
+  const key = await subtle.importKey(
+    'jwk',
+    signature.publicKeyJwk,
+    keyImportAlgorithm(signature, hash),
+    false,
+    ['verify']
+  );
+  const valid = await subtle.verify(
+    algorithm,
+    key,
+    base64UrlToUint8Array(signature.signature),
+    toUint8Array(input)
+  );
+
+  if (!valid) {
+    throw new SandboxRuntimeError('ARTIFACT_SIGNATURE_MISMATCH', 'Sandbox artifact signature is not valid');
+  }
+  return true;
+}
+
 export function assertAllowedWasmImports(
   imports: WebAssembly.ModuleImportDescriptor[],
   allowedImports: string[]
@@ -556,6 +610,37 @@ function normalizeHash(value: string) {
   return value.trim().toLowerCase().replace(/^sha256:/, '');
 }
 
+function signatureAlgorithm(signature: SandboxArtifactSignature, hash: string): AlgorithmIdentifier | RsaPssParams | EcdsaParams {
+  if (signature.algorithm === 'RSA-PSS') {
+    return {
+      name: 'RSA-PSS',
+      saltLength: signature.saltLength ?? 32
+    };
+  }
+  if (signature.algorithm === 'ECDSA') {
+    return {
+      name: 'ECDSA',
+      hash
+    };
+  }
+  return {
+    name: 'RSASSA-PKCS1-v1_5'
+  };
+}
+
+function keyImportAlgorithm(signature: SandboxArtifactSignature, hash: string): RsaHashedImportParams | EcKeyImportParams {
+  if (signature.algorithm === 'ECDSA') {
+    return {
+      name: 'ECDSA',
+      namedCurve: signature.namedCurve || 'P-256'
+    };
+  }
+  return {
+    name: signature.algorithm,
+    hash
+  };
+}
+
 function normalizeImportId(value: string) {
   return value.trim();
 }
@@ -586,6 +671,17 @@ function toOwnedArrayBuffer(input: ArrayBuffer | ArrayBufferView): ArrayBuffer {
   const copy = new Uint8Array(bytes.byteLength);
   copy.set(bytes);
   return copy.buffer;
+}
+
+function base64UrlToUint8Array(value: string) {
+  const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
+  const binary = atob(padded);
+  const output = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    output[index] = binary.charCodeAt(index);
+  }
+  return output;
 }
 
 function nextSandboxId(name: string) {
@@ -619,6 +715,7 @@ function createWasmSandboxWorkerUrl() {
 
 const WASM_SANDBOX_WORKER_SOURCE = `
 const containers = new Map();
+const scopedStorage = new Map();
 
 self.onmessage = async (event) => {
   const { id, type, payload } = event.data || {};
@@ -704,6 +801,10 @@ function createImportValue(item, payload) {
   }
 
   const id = item.module + '/' + item.name;
+  const capability = payload.capabilities && (payload.capabilities[id] || payload.capabilities[item.module + '.' + item.name] || payload.capabilities[item.name]);
+  if (capability) {
+    return createRegisteredCapability(id, capability);
+  }
   if (id === 'gaesup:time/now' || item.name === 'now') {
     return () => Date.now();
   }
@@ -713,9 +814,74 @@ function createImportValue(item, payload) {
       return 0;
     };
   }
+  if (id === 'gaesup:network/fetch' || item.name === 'fetch') {
+    return () => {
+      const network = payload.permissions && payload.permissions.network;
+      const enabled = network === true || network && network.enabled === true;
+      if (!enabled) {
+        throw runtimeError('NETWORK_PERMISSION_DENIED', 'Network capability is not permitted for this container');
+      }
+      const allow = Array.isArray(network && network.allow) ? network.allow : [];
+      if (!allow.includes('*')) {
+        throw runtimeError('NETWORK_NOT_ALLOWLISTED', 'Network fetch requires an explicit wildcard or host capability allowlist entry');
+      }
+      throw runtimeError('CAPABILITY_NOT_IMPLEMENTED', 'Network fetch requires a host-provided async capability');
+    };
+  }
+  if (id === 'gaesup:storage/get_i32' || item.name === 'storage_get_i32') {
+    return (key) => {
+      const storage = normalizeStoragePermission(payload.permissions && payload.permissions.storage);
+      if (storage.mode !== 'scoped') {
+        throw runtimeError('STORAGE_PERMISSION_DENIED', 'Storage read capability is not permitted for this container');
+      }
+      const namespace = storage.namespace || payload.containerId;
+      return scopedStorage.get(namespace + ':' + key) || 0;
+    };
+  }
+  if (id === 'gaesup:storage/set_i32' || item.name === 'storage_set_i32') {
+    return (key, value) => {
+      const storage = normalizeStoragePermission(payload.permissions && payload.permissions.storage);
+      if (storage.mode !== 'scoped') {
+        throw runtimeError('STORAGE_PERMISSION_DENIED', 'Storage write capability is not permitted for this container');
+      }
+      const namespace = storage.namespace || payload.containerId;
+      scopedStorage.set(namespace + ':' + key, value);
+      return 0;
+    };
+  }
 
   return () => {
     throw runtimeError('CAPABILITY_NOT_IMPLEMENTED', 'Allowed import has no worker capability implementation: ' + id);
+  };
+}
+
+function createRegisteredCapability(id, capability) {
+  if (capability.kind === 'clock-ms') {
+    return () => Date.now();
+  }
+  if (capability.kind === 'const-i32') {
+    return () => capability.value | 0;
+  }
+  if (capability.kind === 'deny') {
+    return () => {
+      throw runtimeError(
+        capability.code || 'CAPABILITY_DENIED',
+        capability.message || 'Capability denied: ' + id
+      );
+    };
+  }
+  return () => {
+    throw runtimeError('CAPABILITY_NOT_IMPLEMENTED', 'Unknown registered capability kind for: ' + id);
+  };
+}
+
+function normalizeStoragePermission(value) {
+  if (!value || value === 'none') return { mode: 'none' };
+  if (value === 'scoped') return { mode: 'scoped' };
+  if (value === 'host') return { mode: 'host' };
+  return {
+    mode: value.mode || 'none',
+    namespace: value.namespace
   };
 }
 

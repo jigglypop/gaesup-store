@@ -7,7 +7,9 @@
   "scripts": {
     "changed": "node scripts/list-changed-containers.mjs",
     "validate": "node scripts/validate-deployment.mjs",
-    "validate:affected": "node scripts/validate-affected-deployment.mjs"
+    "validate:affected": "node scripts/validate-affected-deployment.mjs",
+    "deploy:affected": "node scripts/update-registry-slots.mjs",
+    "rollback": "node scripts/rollback-slot.mjs"
   },
   "dependencies": {
     "gaesup-state-core-rust": "workspace:*"

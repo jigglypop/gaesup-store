@@ -1,8 +1,42 @@
 /// <reference path="./wasm.d.ts" />
 
 import initWasm, * as wasm from 'gaesup-state-core-rust/web';
+export {
+  FrontendSandboxGrid,
+  MicroSandboxRuntime,
+  SandboxRuntimeError,
+  WasmWorkerSandboxContainer,
+  assertAllowedWasmImports,
+  mountIframeSandboxSlot,
+  resolveSandboxCoordinate,
+  sandboxCoordinateKey,
+  sha256Hex,
+  verifyArtifactHash
+} from './micro-sandbox';
+export {
+  FrontendSandboxOrchestrator
+} from './sandbox-orchestrator';
+export type {
+  IframeSandboxSlot,
+  MicroSandboxManifest,
+  SandboxArtifactSignature,
+  SandboxAuditEvent,
+  SandboxCapabilityDescriptor,
+  SandboxCapabilityRegistry,
+  SandboxCoordinate,
+  SandboxPermissionContract,
+  SandboxRuntimeKind,
+  WasmSandboxMetrics
+} from './micro-sandbox';
+export type {
+  SandboxHandle,
+  SandboxManifestValidator,
+  SandboxOrchestratorOptions,
+  SandboxSlotRecord,
+  WasmSandboxHandle
+} from './sandbox-orchestrator';
 
-export type DependencyConflictPolicy = 'reject' | 'isolate' | 'migrate' | 'readonly';
+export type DependencyConflictPolicy = 'reject' | 'isolate' | 'migrate' | 'readonly' | 'shadow' | 'dual-write';
 export type AcceleratorKind = 'cpu' | 'webgpu' | 'cuda';
 
 export interface Action<T = any> {
@@ -142,9 +176,51 @@ export type ContainerEvent = Record<string, any> & { type: ContainerEventType };
 export type ContainerManagerConfig = Record<string, any>;
 export type ContainerMetrics = Record<string, any>;
 export type ContainerMetadata = Record<string, any>;
+export type RuntimeTimelineEventType =
+  | 'manifest:fetched'
+  | 'manifest:validated'
+  | 'container:loaded'
+  | 'container:created'
+  | 'container:stopped'
+  | 'store:attached'
+  | 'store:isolated'
+  | 'store:transitioned'
+  | 'machine:transitioned'
+  | 'effect:requested'
+  | 'effect:denied'
+  | 'runtime:error';
+
+export interface RuntimeTimelineEvent {
+  type: RuntimeTimelineEventType;
+  timestamp: number;
+  containerId?: string;
+  storeId?: string;
+  machineId?: string;
+  event?: string;
+  durationMs?: number;
+  code?: string;
+  message?: string;
+  details?: Record<string, any>;
+}
+
+export interface RuntimeMetricsSnapshot {
+  timestamp: number;
+  timeline: RuntimeTimelineEvent[];
+  containers: ContainerMetadata[];
+  stores: RegisteredStoreSchema[];
+}
+
+export interface StoreRuntimePolicy {
+  storeId: string;
+  policy: DependencyConflictPolicy;
+  shadowStoreId?: string;
+  dualWriteStoreIds?: string[];
+}
 
 let ready: Promise<void> | null = null;
 const dispatchListeners = new Map<string, Set<(action: Action, state: any) => void>>();
+const runtimeTimeline: RuntimeTimelineEvent[] = [];
+const storeRuntimePolicies = new Map<string, StoreRuntimePolicy>();
 let autoStoreSeq = 0;
 let activeAutoWatcher: AutoStoreWatcher<any, any> | null = null;
 
@@ -161,6 +237,16 @@ function requireReady() {
   }
 }
 
+function pushRuntimeEvent(event: Omit<RuntimeTimelineEvent, 'timestamp'>) {
+  runtimeTimeline.push({
+    ...event,
+    timestamp: Date.now()
+  });
+  if (runtimeTimeline.length > 500) {
+    runtimeTimeline.splice(0, runtimeTimeline.length - 500);
+  }
+}
+
 export const GaesupCore = {
   async initStore(initialState: any = {}) {
     return this.createStore('main', initialState);
@@ -169,6 +255,11 @@ export const GaesupCore = {
     await ensureReady();
     await wasm.create_store(storeId, initialState);
     if (options.schema) await wasm.register_store_schema(options.schema);
+    pushRuntimeEvent({
+      type: 'store:attached',
+      storeId,
+      details: { schema: options.schema }
+    });
   },
   async cleanupStore(storeId: string) {
     await ensureReady();
@@ -183,13 +274,41 @@ export const GaesupCore = {
   },
   async dispatch(storeIdOrActionType: string, actionTypeOrPayload?: any, payload?: any) {
     await ensureReady();
+    const start = Date.now();
     const legacy = payload === undefined && typeof actionTypeOrPayload !== 'string';
     const storeId = legacy ? 'main' : storeIdOrActionType;
     const actionType = legacy ? storeIdOrActionType : actionTypeOrPayload;
     const actionPayload = legacy ? actionTypeOrPayload : payload;
-    const state = await wasm.dispatch(storeId, actionType, actionPayload);
+    assertStoreWriteAllowed(storeId, actionType);
+    const targetStoreId = resolveWriteStoreId(storeId);
+    const state = await wasm.dispatch(targetStoreId, actionType, actionPayload);
+    await dispatchDualWrites(storeId, actionType, actionPayload);
     dispatchListeners.get(storeId)?.forEach((listener) => listener({ type: actionType, payload: actionPayload }, state));
+    pushRuntimeEvent({
+      type: 'store:transitioned',
+      storeId: targetStoreId,
+      event: actionType,
+      durationMs: Date.now() - start,
+      details: storeId === targetStoreId ? undefined : { requestedStoreId: storeId }
+    });
     return state;
+  },
+  async dispatchWithMetadata(storeId: string, actionType: string, payload?: any) {
+    await ensureReady();
+    const start = Date.now();
+    assertStoreWriteAllowed(storeId, actionType);
+    const targetStoreId = resolveWriteStoreId(storeId);
+    const result = await (wasm as any).dispatch_with_metadata(targetStoreId, actionType, payload);
+    await dispatchDualWrites(storeId, actionType, payload);
+    dispatchListeners.get(storeId)?.forEach((listener) => listener({ type: actionType, payload }, result.state));
+    pushRuntimeEvent({
+      type: 'store:transitioned',
+      storeId: targetStoreId,
+      event: actionType,
+      durationMs: Date.now() - start,
+      details: { changedPaths: result.changedPaths || [], requestedStoreId: storeId }
+    });
+    return result as { state: any; changedPaths: string[] };
   },
   async dispatchCounter(storeId: string, delta: number, framework: string, actionName: string) {
     await ensureReady();
@@ -239,7 +358,7 @@ export const GaesupCore = {
     requireReady();
     const storeId = maybePath === undefined ? 'main' : storeIdOrPath;
     const path = maybePath === undefined ? storeIdOrPath : maybePath;
-    return wasm.select(storeId, path || '');
+    return wasm.select(resolveReadStoreId(storeId), path || '');
   },
   subscribe(storeId: string, path: string, callbackOrId: string | ((state: any) => void)) {
     requireReady();
@@ -270,9 +389,37 @@ export const GaesupCore = {
     await ensureReady();
     return wasm.get_metrics(storeId);
   },
+  async getRuntimeMetrics(): Promise<RuntimeMetricsSnapshot> {
+    await ensureReady();
+    return {
+      timestamp: Date.now(),
+      timeline: [...runtimeTimeline],
+      containers: wasm.list_containers() as ContainerMetadata[],
+      stores: wasm.get_store_schemas() as RegisteredStoreSchema[]
+    };
+  },
+  getRuntimeTimeline() {
+    return [...runtimeTimeline];
+  },
+  recordRuntimeEvent(event: Omit<RuntimeTimelineEvent, 'timestamp'>) {
+    pushRuntimeEvent(event);
+  },
   registerStoreSchema(schema: RegisteredStoreSchema) {
     requireReady();
     return wasm.register_store_schema(schema);
+  },
+  setStoreRuntimePolicy(policy: StoreRuntimePolicy) {
+    storeRuntimePolicies.set(policy.storeId, policy);
+    if (policy.policy === 'isolate' || policy.policy === 'shadow') {
+      pushRuntimeEvent({
+        type: 'store:isolated',
+        storeId: policy.storeId,
+        details: { shadowStoreId: policy.shadowStoreId, policy: policy.policy }
+      });
+    }
+  },
+  clearStoreRuntimePolicy(storeId: string) {
+    storeRuntimePolicies.delete(storeId);
   },
   getStoreSchemas() {
     requireReady();
@@ -305,6 +452,55 @@ export const GaesupCore = {
 
 const callbackRegistry = new Map<string, (state?: any) => void>();
 
+function resolveReadStoreId(storeId: string) {
+  const policy = storeRuntimePolicies.get(storeId);
+  if ((policy?.policy === 'isolate' || policy?.policy === 'shadow') && policy.shadowStoreId) {
+    return policy.shadowStoreId;
+  }
+  return storeId;
+}
+
+function resolveWriteStoreId(storeId: string) {
+  const policy = storeRuntimePolicies.get(storeId);
+  if ((policy?.policy === 'isolate' || policy?.policy === 'shadow') && policy.shadowStoreId) {
+    return policy.shadowStoreId;
+  }
+  return storeId;
+}
+
+function assertStoreWriteAllowed(storeId: string, actionType: string) {
+  const policy = storeRuntimePolicies.get(storeId);
+  if (policy?.policy !== 'readonly') return;
+
+  const error = new Error(`Store ${storeId} is readonly; rejected write action ${actionType}`);
+  pushRuntimeEvent({
+    type: 'runtime:error',
+    storeId,
+    event: actionType,
+    code: 'STORE_READONLY_WRITE_DENIED',
+    message: error.message
+  });
+  throw error;
+}
+
+async function dispatchDualWrites(storeId: string, actionType: string, payload: any) {
+  const policy = storeRuntimePolicies.get(storeId);
+  if (policy?.policy !== 'dual-write' || !policy.dualWriteStoreIds?.length) return;
+
+  for (const targetStoreId of policy.dualWriteStoreIds) {
+    if (targetStoreId === storeId) continue;
+    await wasm.dispatch(targetStoreId, actionType, payload);
+    pushRuntimeEvent({
+      type: 'store:transitioned',
+      storeId: targetStoreId,
+      event: actionType,
+      details: {
+        dualWriteSourceStoreId: storeId
+      }
+    });
+  }
+}
+
 export class CompatibilityGuard {
   constructor(private readonly host: HostCompatibilityConfig = {}) {}
   validate(manifest: ContainerPackageManifest): ValidationResult {
@@ -327,13 +523,56 @@ export class ContainerInstance {
   async stop() { await ensureReady(); return wasm.stop_container(this.id); }
 }
 
+function assertContainerManagerRuntime(config: ContainerConfig) {
+  const runtime = config.runtime?.toLowerCase();
+  if (!runtime || runtime === 'in-memory' || runtime === 'demo') return;
+
+  if (runtime === 'wasm' || runtime === 'wasm-worker' || runtime === 'worker' || runtime === 'iframe') {
+    const message = `ContainerManager cannot attach ${config.runtime} containers directly; use MicroSandboxRuntime or FrontendSandboxOrchestrator for artifact, import, and permission enforcement`;
+    pushRuntimeEvent({
+      type: 'runtime:error',
+      containerId: config.id,
+      code: 'CONTAINER_RUNTIME_REQUIRES_SANDBOX',
+      message,
+      details: {
+        name: config.name,
+        runtime: config.runtime
+      }
+    });
+    const error = new Error(message) as Error & { code?: string };
+    error.code = 'CONTAINER_RUNTIME_REQUIRES_SANDBOX';
+    throw error;
+  }
+
+  const message = `Unsupported ContainerManager runtime: ${config.runtime}`;
+  pushRuntimeEvent({
+    type: 'runtime:error',
+    containerId: config.id,
+    code: 'CONTAINER_RUNTIME_UNSUPPORTED',
+    message,
+    details: {
+      name: config.name,
+      runtime: config.runtime
+    }
+  });
+  const error = new Error(message) as Error & { code?: string };
+  error.code = 'CONTAINER_RUNTIME_UNSUPPORTED';
+  throw error;
+}
+
 export class ContainerManager {
   private listeners = new Map<ContainerEventType, Set<(event: ContainerEvent) => void>>();
   constructor(readonly config: ContainerManagerConfig = {}) {}
   async createContainer(config: ContainerConfig) {
     await ensureReady();
+    assertContainerManagerRuntime(config);
     const created = wasm.create_container(config);
     const instance = new ContainerInstance(created.id);
+    pushRuntimeEvent({
+      type: 'container:created',
+      containerId: created.id,
+      details: { name: config.name, runtime: config.runtime }
+    });
     this.emit('container:created', { type: 'container:created', id: created.id, containerId: created.id });
     return instance;
   }
@@ -355,17 +594,43 @@ export class ContainerManager {
   }
 }
 
-export class WASMContainerManager extends ContainerManager {}
+export class DemoContainerManager extends ContainerManager {}
+
+/**
+ * @deprecated This manager does not attach external WASM artifacts. Use
+ * DemoContainerManager for the in-memory/demo lifecycle path, or
+ * MicroSandboxRuntime/FrontendSandboxOrchestrator for real WASM sandbox attach.
+ */
+export class WASMContainerManager extends DemoContainerManager {}
 
 export async function createOptimalContainerManager(config: ContainerManagerConfig = {}) {
   await ensureReady();
-  return new WASMContainerManager(config);
+  return new DemoContainerManager(config);
 }
 
 export class ReduxDevToolsBridge {
-  containerCreated() {}
-  functionCalled() {}
-  errorOccurred() {}
+  containerCreated(containerId: string, details: Record<string, any> = {}) {
+    pushRuntimeEvent({ type: 'container:created', containerId, details });
+  }
+  functionCalled(containerId: string, functionName: string, details: Record<string, any> = {}) {
+    pushRuntimeEvent({
+      type: 'container:loaded',
+      containerId,
+      event: functionName,
+      details
+    });
+  }
+  errorOccurred(error: Error | string, details: Record<string, any> = {}) {
+    const resolved = error instanceof Error ? error : new Error(error);
+    pushRuntimeEvent({
+      type: 'runtime:error',
+      message: resolved.message,
+      details
+    });
+  }
+  getTimeline() {
+    return [...runtimeTimeline];
+  }
 }
 
 export function getDevToolsBridge() {
@@ -1160,11 +1425,24 @@ export function createActor<TContext = any>(
     },
     async send(eventInput: string | Record<string, any>) {
       const id = await ensureStarted();
+      const start = Date.now();
       const event = normalizeMachineEvent(eventInput);
       event.__guards = evaluateMachineGuards(options.guards || {}, currentSnapshot, event);
       const result = await (wasm as any).send_machine(id, clonePlain(event)) as MachineTransitionResult<TContext>;
       currentSnapshot = result.snapshot;
       result.effectResults = await runMachineEffects(result.effects || [], options, currentSnapshot, event);
+      pushRuntimeEvent({
+        type: 'machine:transitioned',
+        machineId: definition.id,
+        event: event.type,
+        durationMs: Date.now() - start,
+        details: {
+          accepted: result.accepted,
+          state: currentSnapshot.state,
+          rejectedReason: result.rejectedReason,
+          effects: result.effects?.map((effect) => effect.type) || []
+        }
+      });
       await persistSnapshot();
       notify();
       return result;
@@ -1181,6 +1459,16 @@ export function createActor<TContext = any>(
       const id = await ensureStarted();
       const result = await (wasm as any).rollback_machine(id, rollbackOptions.steps || 1) as MachineTransitionResult<TContext>;
       currentSnapshot = result.snapshot;
+      pushRuntimeEvent({
+        type: 'machine:transitioned',
+        machineId: definition.id,
+        event: 'rollback',
+        details: {
+          accepted: result.accepted,
+          state: currentSnapshot.state,
+          steps: rollbackOptions.steps || 1
+        }
+      });
       await persistSnapshot();
       notify();
       return result;
@@ -1455,9 +1743,29 @@ async function runMachineEffects<TContext>(
   const allowed = options.allowedEffects ? new Set(options.allowedEffects) : null;
 
   for (const effect of effects) {
+    const permission = effect.permission || `effects:${effect.type}`;
     const handler = options.effects?.[effect.type];
-    if (!handler || (allowed && !allowed.has(effect.type))) {
-      results.push({ effect, status: 'denied' });
+    if (allowed && !allowed.has(permission) && !allowed.has(effect.type)) {
+      pushRuntimeEvent({
+        type: 'effect:denied',
+        machineId: snapshot.machineId,
+        event: effect.type,
+        code: 'EFFECT_PERMISSION_DENIED',
+        details: { permission }
+      });
+      results.push({ effect, status: 'denied', error: `Effect permission denied: ${permission}` });
+      continue;
+    }
+
+    pushRuntimeEvent({
+      type: 'effect:requested',
+      machineId: snapshot.machineId,
+      event: effect.type,
+      details: { handled: !!handler, permission }
+    });
+
+    if (!handler) {
+      results.push({ effect, status: 'resolved', result: undefined });
       continue;
     }
 

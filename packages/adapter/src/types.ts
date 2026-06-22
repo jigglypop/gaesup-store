@@ -38,3 +38,35 @@ export interface FrameworkAdapter {
   getCachedState(containerId: string): any
   getSubscriptionCount(containerId: string): number
 }
+
+export interface AdapterContractContainer<TState = any> {
+  id: string
+  getState?: () => TState
+  state?: TState
+  subscribe?: (callback: (state: TState) => void) => () => void
+  dispatch?: (actionType: string, payload?: any) => Promise<TState> | TState
+  updateState?: (state: TState) => Promise<void> | void
+  stop?: () => Promise<void> | void
+}
+
+export interface AdapterMountContext<TState = any> {
+  container: AdapterContractContainer<TState>
+  initialState?: TState
+  fallbackContainer?: AdapterContractContainer<TState>
+}
+
+export interface AdapterSnapshot<TState = any> {
+  containerId: string
+  mounted: boolean
+  state: TState | undefined
+  error: Error | null
+}
+
+export interface AdapterContract<TState = any> {
+  mount(context: AdapterMountContext<TState>): Promise<AdapterSnapshot<TState>>
+  unmount(): Promise<void>
+  subscribe(listener: (snapshot: AdapterSnapshot<TState>) => void): () => void
+  dispatch(actionType: string, payload?: any): Promise<AdapterSnapshot<TState>>
+  getSnapshot(): AdapterSnapshot<TState>
+  onError(listener: (error: Error) => void): () => void
+}

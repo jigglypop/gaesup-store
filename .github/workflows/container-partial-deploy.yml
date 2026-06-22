@@ -94,7 +94,13 @@ jobs:
       - name: Validate container contract
         run: pnpm --filter @gaesup-example/monorepo-containers run validate:affected -- --containers '${{ matrix.container }}'
 
-      - name: Partial deployment placeholder
-        run: |
-          echo "Validated ${{ matrix.container }}."
-          echo "Upload artifact and update this slot in the registry here."
+      - name: Update registry slot pointer
+        if: github.event_name == 'push'
+        run: pnpm --filter @gaesup-example/monorepo-containers run deploy:affected -- --containers '${{ matrix.container }}'
+
+      - name: Upload registry artifact
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: container-registry-${{ matrix.container }}
+          path: examples/monorepo-containers/dist/registry.json

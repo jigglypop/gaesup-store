@@ -1,4 +1,4 @@
-import { createOptimalContainerManager, WASMContainerManager, ContainerManager, getDevToolsBridge, ReduxDevToolsBridge } from 'gaesup-state';
+import { createOptimalContainerManager, DemoContainerManager, ContainerManager, getDevToolsBridge, ReduxDevToolsBridge } from 'gaesup-state';
 import type { ContainerConfig } from 'gaesup-state';
 // TODO: adapter 패키지 완성 후 다시 활성화
 // import { createFrameworkAdapter } from '@gaesup-state/adapter';
@@ -12,7 +12,7 @@ export interface SharedStateEvent {
 
 export class SharedContainerManager {
   private static instance: SharedContainerManager;
-  private containerManager: WASMContainerManager | ContainerManager | null = null;
+  private containerManager: DemoContainerManager | ContainerManager | null = null;
   private eventTarget: EventTarget;
   private adapters = new Map<string, any>();
   private isWasmEnabled = false;
@@ -47,8 +47,8 @@ export class SharedContainerManager {
         useWASM: true // WASM 사용 강제 활성화
       });
 
-      // WASM 매니저인지 확인
-      this.isWasmEnabled = this.containerManager instanceof (await import('gaesup-state')).WASMContainerManager;
+      // This demo manager is an in-memory lifecycle harness, not the real sandbox attach path.
+      this.isWasmEnabled = false;
       
       console.log(`✅ 컨테이너 매니저 초기화 완료 (${this.isWasmEnabled ? 'WASM' : 'TypeScript'})`);
       
@@ -85,7 +85,7 @@ export class SharedContainerManager {
     }
 
     try {
-      // WASMContainerManager의 경우 ContainerConfig 객체가 필요
+      // DemoContainerManager uses the in-memory ContainerConfig path.
       if (this.isWasmEnabled && 'createContainer' in this.containerManager) {
         const containerInstance = await this.containerManager.createContainer({ name });
         const containerId = containerInstance.getId(); // WASMContainerInstance에서 ID 가져오기
@@ -299,4 +299,4 @@ export class SharedContainerManager {
 // 전역 인스턴스 설정
 (window as any).GaesupSharedManager = SharedContainerManager.getInstance();
 
-export default SharedContainerManager; 
+export default SharedContainerManager;

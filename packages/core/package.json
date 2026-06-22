@@ -43,8 +43,8 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "type-check": "tsc --noEmit",
-    "test": "vitest run",
+    "type-check": "node --max-old-space-size=4096 ../../node_modules/typescript/bin/tsc --noEmit",
+    "test": "node --max-old-space-size=4096 ../../node_modules/vitest/vitest.mjs run",
     "pack:dry": "pnpm run build && npm pack --dry-run"
   },
   "dependencies": {

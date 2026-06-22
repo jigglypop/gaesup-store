@@ -7,6 +7,7 @@ import {
   GaesupCore,
   CompatibilityGuard,
   ContainerManager,
+  DemoContainerManager,
   GaesupRender,
   GaesupRenderBridge
 } from 'gaesup-state';
@@ -327,13 +328,16 @@ accelerators: [
 현재 ContainerManager는 Rust container registry와 lifecycle API를 감싼 얇은 wrapper입니다.
 
 ```typescript
-const manager = new ContainerManager();
+const manager = new DemoContainerManager();
 
 const container = await manager.createContainer({
   name: 'orders-widget',
+  runtime: 'demo',
   initialState: { ready: true }
 });
 ```
+
+`ContainerManager` is the in-memory/demo lifecycle API. It rejects `runtime: 'wasm'`, `runtime: 'wasm-worker'`, `runtime: 'worker'`, and `runtime: 'iframe'` with `CONTAINER_RUNTIME_REQUIRES_SANDBOX`. Use `MicroSandboxRuntime` or `FrontendSandboxOrchestrator` for external artifacts so hash/signature, `allowedImports`, permissions, and isolation are enforced before attach.
 
 ### ContainerInstance
 

@@ -38,11 +38,16 @@ const result = guard.validate(manifest);
 
 ```typescript
 const manager = new ContainerManager();
-const container = await manager.createContainer({ name: 'orders-widget' });
+const container = await manager.createContainer({
+  name: 'orders-widget',
+  runtime: 'demo'
+});
 
 await container.call('render', {});
 await container.stop();
 ```
+
+`ContainerManager` is the demo/in-memory lifecycle harness. It must not be used as the real external WASM attach path. Use `MicroSandboxRuntime` or `FrontendSandboxOrchestrator` when a container artifact needs hash/signature verification, `allowedImports`, permission checks, and worker/iframe isolation.
 
 현재 구현은 컨테이너 registry와 call/metrics 흐름을 제공하는 얇은 계층입니다. 실제 강한 sandbox enforcement는 이후 단계에서 worker, iframe, import whitelist와 함께 확장해야 합니다.
 

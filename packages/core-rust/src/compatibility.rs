@@ -150,6 +150,57 @@ fn validate_stores(
                     store_id,
                 ));
             }
+            Some((_provided_schema_id, provided_version)) if policy == "migrate" => {
+                if has_schema_migration(&store) {
+                    warnings.push(validation_issue(
+                        "STORE_SCHEMA_MIGRATION_REQUIRED",
+                        &format!("Store {store_id} requires migration before attaching: requires {required}, host provides {provided_version}"),
+                        "warning",
+                        store_id,
+                    ));
+                } else {
+                    errors.push(validation_issue(
+                        "STORE_SCHEMA_MIGRATION_MISSING",
+                        &format!("Store {store_id} requested migrate policy but no migration was declared"),
+                        "error",
+                        store_id,
+                    ));
+                }
+            }
+            Some((_provided_schema_id, provided_version)) if policy == "readonly" => {
+                warnings.push(validation_issue(
+                    "STORE_SCHEMA_READONLY",
+                    &format!("Store {store_id} schema mismatch will attach readonly: requires {required}, host provides {provided_version}"),
+                    "warning",
+                    store_id,
+                ));
+            }
+            Some((_provided_schema_id, provided_version)) if policy == "shadow" => {
+                isolated_stores.push(Value::String(store_id.to_string()));
+                warnings.push(validation_issue(
+                    "STORE_SCHEMA_SHADOWED",
+                    &format!("Store {store_id} schema mismatch will run against shadow state: requires {required}, host provides {provided_version}"),
+                    "warning",
+                    store_id,
+                ));
+            }
+            Some((_provided_schema_id, provided_version)) if policy == "dual-write" => {
+                if has_dual_write_contract(&store) {
+                    warnings.push(validation_issue(
+                        "STORE_SCHEMA_DUAL_WRITE",
+                        &format!("Store {store_id} schema mismatch will use dual-write: requires {required}, host provides {provided_version}"),
+                        "warning",
+                        store_id,
+                    ));
+                } else {
+                    errors.push(validation_issue(
+                        "STORE_SCHEMA_DUAL_WRITE_MISSING",
+                        &format!("Store {store_id} requested dual-write policy but no dualWrite contract was declared"),
+                        "error",
+                        store_id,
+                    ));
+                }
+            }
             Some((_provided_schema_id, provided_version)) => errors.push(validation_issue(
                 "STORE_SCHEMA_CONFLICT",
                 &format!("Store {store_id} schema version mismatch: requires {required}, host provides {provided_version}"),
@@ -165,6 +216,15 @@ fn validate_stores(
                     store_id,
                 ));
             }
+            None if policy == "shadow" => {
+                isolated_stores.push(Value::String(store_id.to_string()));
+                warnings.push(validation_issue(
+                    "STORE_SCHEMA_SHADOWED",
+                    &format!("Store {store_id} has no host schema and will run against shadow state"),
+                    "warning",
+                    store_id,
+                ));
+            }
             None => errors.push(validation_issue(
                 "STORE_SCHEMA_MISSING",
                 &format!("Store {store_id} is required but host has no registered schema"),
@@ -173,6 +233,23 @@ fn validate_stores(
             )),
         }
     }
+}
+
+fn has_schema_migration(store: &Value) -> bool {
+    store.get("migration").is_some()
+        || store
+            .get("migrations")
+            .and_then(Value::as_array)
+            .is_some_and(|items| !items.is_empty())
+}
+
+fn has_dual_write_contract(store: &Value) -> bool {
+    store.get("dualWrite").is_some()
+        || store.get("dual-write").is_some()
+        || store
+            .get("writeSchemas")
+            .and_then(Value::as_array)
+            .is_some_and(|items| items.len() >= 2)
 }
 
 fn validate_accelerators(
@@ -637,6 +714,116 @@ mod tests {
         assert!(errors.is_empty());
         assert_eq!(warnings[0]["code"], "STORE_SCHEMA_ISOLATED");
         assert_eq!(isolated, vec![Value::String("orders".to_string())]);
+    }
+
+    #[test]
+    fn schema_conflict_with_migrate_requires_declared_migration() {
+        let manifest = json!({
+            "stores": [
+                {
+                    "storeId": "orders",
+                    "schemaId": "orders-state",
+                    "schemaVersion": "^2.0.0",
+                    "conflictPolicy": "migrate",
+                    "migrations": [{ "from": "1.x", "to": "2.0.0", "name": "ordersV2" }]
+                }
+            ]
+        });
+        let host = json!({
+            "stores": [
+                { "storeId": "orders", "schemaId": "orders-state", "schemaVersion": "1.2.0" }
+            ]
+        });
+        let mut errors = vec![];
+        let mut warnings = vec![];
+        let mut isolated = vec![];
+
+        validate_stores(&manifest, &host, &mut errors, &mut warnings, &mut isolated);
+
+        assert!(errors.is_empty());
+        assert_eq!(warnings[0]["code"], "STORE_SCHEMA_MIGRATION_REQUIRED");
+        assert!(isolated.is_empty());
+    }
+
+    #[test]
+    fn migrate_policy_without_migration_is_error() {
+        let manifest = json!({
+            "stores": [
+                {
+                    "storeId": "orders",
+                    "schemaId": "orders-state",
+                    "schemaVersion": "^2.0.0",
+                    "conflictPolicy": "migrate"
+                }
+            ]
+        });
+        let host = json!({
+            "stores": [
+                { "storeId": "orders", "schemaId": "orders-state", "schemaVersion": "1.2.0" }
+            ]
+        });
+        let mut errors = vec![];
+        let mut warnings = vec![];
+        let mut isolated = vec![];
+
+        validate_stores(&manifest, &host, &mut errors, &mut warnings, &mut isolated);
+
+        assert_eq!(errors[0]["code"], "STORE_SCHEMA_MIGRATION_MISSING");
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn readonly_shadow_and_dual_write_policies_are_reported() {
+        let manifest = json!({
+            "stores": [
+                {
+                    "storeId": "readonly-orders",
+                    "schemaId": "orders-state",
+                    "schemaVersion": "^2.0.0",
+                    "conflictPolicy": "readonly"
+                },
+                {
+                    "storeId": "shadow-orders",
+                    "schemaId": "orders-state",
+                    "schemaVersion": "^2.0.0",
+                    "conflictPolicy": "shadow"
+                },
+                {
+                    "storeId": "dual-orders",
+                    "schemaId": "orders-state",
+                    "schemaVersion": "^2.0.0",
+                    "conflictPolicy": "dual-write",
+                    "writeSchemas": ["1.x", "2.x"]
+                }
+            ]
+        });
+        let host = json!({
+            "stores": [
+                { "storeId": "readonly-orders", "schemaId": "orders-state", "schemaVersion": "1.2.0" },
+                { "storeId": "shadow-orders", "schemaId": "orders-state", "schemaVersion": "1.2.0" },
+                { "storeId": "dual-orders", "schemaId": "orders-state", "schemaVersion": "1.2.0" }
+            ]
+        });
+        let mut errors = vec![];
+        let mut warnings = vec![];
+        let mut isolated = vec![];
+
+        validate_stores(&manifest, &host, &mut errors, &mut warnings, &mut isolated);
+
+        let codes: Vec<&str> = warnings
+            .iter()
+            .filter_map(|issue| issue.get("code").and_then(Value::as_str))
+            .collect();
+        assert!(errors.is_empty());
+        assert_eq!(
+            codes,
+            vec![
+                "STORE_SCHEMA_READONLY",
+                "STORE_SCHEMA_SHADOWED",
+                "STORE_SCHEMA_DUAL_WRITE"
+            ]
+        );
+        assert_eq!(isolated, vec![Value::String("shadow-orders".to_string())]);
     }
 
     #[test]

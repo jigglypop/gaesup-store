@@ -44,6 +44,20 @@ vi.mock('gaesup-state-core-rust/web', () => ({
     }
     return state;
   }),
+  dispatch_with_metadata: vi.fn((storeId: string, actionType: string, payload: any) => {
+    const dispatchMock = calls.dispatches;
+    const beforeLength = dispatchMock.length;
+    const current = calls.stores.get(storeId) || {};
+    calls.dispatches.push({ storeId, actionType, payload: structuredClone(payload) });
+    if (actionType === 'UPDATE') setPath(current, payload.path, payload.value);
+    if (actionType === 'SET') calls.stores.set(storeId, structuredClone(payload));
+    if (actionType === 'MERGE') Object.assign(current, payload);
+    const next = calls.stores.get(storeId) || current;
+    return {
+      state: next,
+      changedPaths: beforeLength === calls.dispatches.length ? [] : changedPathsMock(actionType, payload)
+    };
+  }),
   select: vi.fn((storeId: string, path: string) => {
     const state = calls.stores.get(storeId);
     return path ? getPath(state, path) : state;
@@ -57,6 +71,18 @@ vi.mock('gaesup-state-core-rust/web', () => ({
   get_metrics: vi.fn(() => ({})),
   register_store_schema: vi.fn(),
   get_store_schemas: vi.fn(() => []),
+  create_container: vi.fn((config: any) => ({
+    id: config.id || `${config.name}:test`,
+    name: config.name,
+    status: 'running',
+    state: structuredClone(config.initialState || {}),
+    calls: 0
+  })),
+  call_container: vi.fn(),
+  get_container_state: vi.fn(() => ({})),
+  get_container_metrics: vi.fn(() => ({ status: 'running' })),
+  stop_container: vi.fn(),
+  list_containers: vi.fn(() => []),
   validate_manifest: vi.fn((manifest: any, host: any) => validateManifestMock(manifest, host)),
   create_machine: vi.fn((definition: any) => {
     const id = definition.id;
@@ -132,7 +158,7 @@ vi.mock('gaesup-state-core-rust/web', () => ({
   }
 }));
 
-import { atom, CompatibilityGuard, createActor, createAutoStore, createMachine, GaesupCore, gaesup, initGaesupCore, resource, tx, watch } from './index';
+import { atom, CompatibilityGuard, ContainerManager, DemoContainerManager, createActor, createAutoStore, createMachine, createOptimalContainerManager, GaesupCore, gaesup, initGaesupCore, resource, tx, watch } from './index';
 
 describe('auto store object tracking', () => {
   beforeEach(() => {
@@ -483,6 +509,92 @@ describe('dispatch pipeline', () => {
   });
 });
 
+describe('store runtime policies', () => {
+  beforeEach(() => {
+    calls.stores.clear();
+    calls.dispatches.length = 0;
+    GaesupCore.clearStoreRuntimePolicy('orders');
+    GaesupCore.clearStoreRuntimePolicy('orders-v2');
+    GaesupCore.clearStoreRuntimePolicy('orders-shadow');
+  });
+
+  it('rejects writes for readonly stores', async () => {
+    await GaesupCore.createStore('orders', { count: 1 });
+    GaesupCore.setStoreRuntimePolicy({ storeId: 'orders', policy: 'readonly' });
+
+    await expect(GaesupCore.dispatch('orders', 'UPDATE', { path: 'count', value: 2 })).rejects.toThrow('readonly');
+    expect(calls.dispatches).toEqual([]);
+  });
+
+  it('routes shadow policy reads and writes to the shadow store', async () => {
+    await GaesupCore.createStore('orders', { count: 1 });
+    await GaesupCore.createStore('orders-shadow', { count: 10 });
+    GaesupCore.setStoreRuntimePolicy({
+      storeId: 'orders',
+      policy: 'shadow',
+      shadowStoreId: 'orders-shadow'
+    });
+
+    await GaesupCore.dispatch('orders', 'UPDATE', { path: 'count', value: 11 });
+
+    expect(calls.stores.get('orders').count).toBe(1);
+    expect(calls.stores.get('orders-shadow').count).toBe(11);
+    expect(GaesupCore.select('orders', 'count')).toBe(11);
+  });
+
+  it('duplicates writes for dual-write stores', async () => {
+    await GaesupCore.createStore('orders', { count: 1 });
+    await GaesupCore.createStore('orders-v2', { count: 100 });
+    GaesupCore.setStoreRuntimePolicy({
+      storeId: 'orders',
+      policy: 'dual-write',
+      dualWriteStoreIds: ['orders-v2']
+    });
+
+    await GaesupCore.dispatch('orders', 'UPDATE', { path: 'count', value: 2 });
+
+    expect(calls.stores.get('orders').count).toBe(2);
+    expect(calls.stores.get('orders-v2').count).toBe(2);
+    expect(calls.dispatches.map((item) => item.storeId)).toEqual(['orders', 'orders-v2']);
+  });
+});
+
+describe('container runtime boundary', () => {
+  it('blocks direct WASM container attachment through ContainerManager', async () => {
+    const manager = new ContainerManager();
+
+    await expect(manager.createContainer({
+      name: 'orders-widget',
+      runtime: 'wasm'
+    })).rejects.toMatchObject({
+      code: 'CONTAINER_RUNTIME_REQUIRES_SANDBOX'
+    });
+
+    expect(GaesupCore.getRuntimeTimeline().some((event) => (
+      event.type === 'runtime:error' &&
+      event.code === 'CONTAINER_RUNTIME_REQUIRES_SANDBOX' &&
+      event.details?.runtime === 'wasm'
+    ))).toBe(true);
+  });
+
+  it('allows explicit demo containers through ContainerManager', async () => {
+    const manager = new ContainerManager();
+    const container = await manager.createContainer({
+      name: 'demo-counter',
+      runtime: 'demo',
+      initialState: { count: 0 }
+    });
+
+    expect(container.getId()).toBe('demo-counter:test');
+  });
+
+  it('returns the demo lifecycle manager from createOptimalContainerManager', async () => {
+    const manager = await createOptimalContainerManager();
+
+    expect(manager).toBeInstanceOf(DemoContainerManager);
+  });
+});
+
 describe('machine actor API', () => {
   beforeEach(() => {
     calls.stores.clear();
@@ -574,6 +686,39 @@ describe('machine actor API', () => {
     const rolledBack = await actor.rollback();
     expect(rolledBack.accepted).toBe(true);
     expect(rolledBack.snapshot.state).toBe('draft');
+  });
+
+  it('denies effects that are not allowed and records machine timeline events', async () => {
+    const actor = createActor(createMachine({
+      id: 'effect-policy-flow',
+      initial: 'idle',
+      context: {},
+      states: {
+        idle: {
+          on: {
+            RUN: { target: 'done', action: 'sendEmail' }
+          }
+        },
+        done: { final: true }
+      }
+    }), {
+      allowedEffects: ['effects:otherEffect'],
+      effects: {
+        sendEmail: vi.fn()
+      }
+    });
+
+    await actor.start();
+    const result = await actor.send('RUN');
+    const timeline = GaesupCore.getRuntimeTimeline();
+
+    expect(result.accepted).toBe(true);
+    expect(result.effectResults?.[0]).toMatchObject({
+      status: 'denied',
+      error: 'Effect permission denied: effects:sendEmail'
+    });
+    expect(timeline.some((event) => event.type === 'effect:denied' && event.event === 'sendEmail')).toBe(true);
+    expect(timeline.some((event) => event.type === 'machine:transitioned' && event.machineId === 'effect-policy-flow')).toBe(true);
   });
 });
 
@@ -690,6 +835,12 @@ function flattenMutations(dispatches: Array<{ storeId: string; actionType: strin
       payload: mutation.payload
     }));
   });
+}
+
+function changedPathsMock(actionType: string, payload: any) {
+  if (actionType === 'UPDATE' || actionType === 'DELETE') return [payload.path];
+  if (actionType === 'MERGE') return Object.keys(payload || {});
+  return [''];
 }
 
 function setPath(target: any, path: string, value: any) {
