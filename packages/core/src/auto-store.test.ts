@@ -146,6 +146,25 @@ vi.mock('gaesup-state-core-rust/web', () => ({
   cleanup_machine: vi.fn((machineId: string) => {
     calls.machines.delete(machineId);
   }),
+  get_machine_metrics: vi.fn((machineId: string) => {
+    const machine = calls.machines.get(machineId);
+    if (!machine) throw new Error(`Machine not found: ${machineId}`);
+    const historyLimit = machine.definition.historyLimit ?? machine.definition.options?.historyLimit ?? 100;
+    const durations = machine.history.map((entry: any) => entry.durationMs);
+    return {
+      machineId: machine.id,
+      state: machine.state,
+      status: machine.status,
+      step: machine.step,
+      historyAvailable: historyLimit > 0,
+      historyTruncated: machine.step > machine.history.length,
+      transitionCount: machine.history.length,
+      avgDurationMs: durations.length
+        ? durations.reduce((sum: number, value: number) => sum + value, 0) / durations.length
+        : null,
+      maxDurationMs: durations.length ? Math.max(...durations) : null
+    };
+  }),
   BatchUpdate: class {
     updates: any[] = [];
     constructor(readonly storeId: string) {}
@@ -973,6 +992,62 @@ describe('machine actor API', () => {
     });
     expect(timeline.some((event) => event.type === 'effect:denied' && event.event === 'sendEmail')).toBe(true);
     expect(timeline.some((event) => event.type === 'machine:transitioned' && event.machineId === 'effect-policy-flow')).toBe(true);
+  });
+});
+
+describe('machine metrics API', () => {
+  beforeEach(() => {
+    calls.stores.clear();
+    calls.machines.clear();
+    calls.dispatches.length = 0;
+  });
+
+  it('aggregates transition count with average and max durations after transitions', async () => {
+    const actor = createActor(createMachine({
+      id: 'metrics-flow',
+      initial: 'cart',
+      context: {},
+      states: {
+        cart: {
+          on: {
+            NEXT: { target: 'payment' }
+          }
+        },
+        payment: {
+          on: {
+            PAY: { target: 'done' }
+          }
+        },
+        done: { final: true }
+      }
+    }));
+
+    await actor.start();
+    await actor.send('NEXT');
+    await actor.send('PAY');
+    const history = calls.machines.get('metrics-flow').history;
+    history[0].durationMs = 4;
+    history[1].durationMs = 10;
+
+    const metrics = await GaesupCore.getMachineMetrics('metrics-flow');
+
+    expect(metrics).toMatchObject({
+      machineId: 'metrics-flow',
+      state: 'done',
+      status: 'final',
+      step: 2,
+      historyAvailable: true,
+      historyTruncated: false,
+      transitionCount: 2,
+      avgDurationMs: 7,
+      maxDurationMs: 10
+    });
+  });
+
+  it('throws for an unknown machine id instead of returning empty metrics', async () => {
+    await expect(GaesupCore.getMachineMetrics('missing-machine')).rejects.toThrow(
+      'Machine not found: missing-machine'
+    );
   });
 });
 

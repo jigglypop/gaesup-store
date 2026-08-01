@@ -232,6 +232,47 @@ pub fn get_machine_snapshot(machine_id: &str) -> Result<JsValue, JsValue> {
 }
 
 #[wasm_bindgen]
+pub fn get_machine_metrics(machine_id: &str) -> Result<JsValue, JsValue> {
+    MACHINES.with(|machines| {
+        let machines = machines.borrow();
+        let machine = machines
+            .get(machine_id)
+            .ok_or_else(|| js_error(&format!("Machine not found: {machine_id}")))?;
+        to_js(&machine_metrics(machine))
+    })
+}
+
+fn machine_metrics(machine: &MachineInstance) -> Value {
+    let transition_count = machine.history.len();
+    let (avg_duration_ms, max_duration_ms) = if transition_count == 0 {
+        (Value::Null, Value::Null)
+    } else {
+        let sum: f64 = machine.history.iter().map(|entry| entry.duration_ms).sum();
+        let max = machine
+            .history
+            .iter()
+            .map(|entry| entry.duration_ms)
+            .fold(f64::MIN, f64::max);
+        (
+            serde_json::json!(sum / transition_count as f64),
+            serde_json::json!(max),
+        )
+    };
+
+    serde_json::json!({
+        "machineId": machine.id,
+        "state": machine.state,
+        "status": machine.status,
+        "step": machine.step,
+        "historyAvailable": history_limit(&machine.definition) > 0,
+        "historyTruncated": machine.step as usize > transition_count,
+        "transitionCount": transition_count,
+        "avgDurationMs": avg_duration_ms,
+        "maxDurationMs": max_duration_ms,
+    })
+}
+
+#[wasm_bindgen]
 pub fn rollback_machine(machine_id: &str, steps: u32) -> Result<JsValue, JsValue> {
     MACHINES.with(|machines| {
         let mut machines = machines.borrow_mut();
@@ -755,5 +796,87 @@ mod tests {
         send_machine_core(&mut machine, &pay, "PAY", 0.0).unwrap();
         assert_eq!(machine.checkpoints.len(), 1);
         assert_eq!(machine.checkpoints[0].state, "payment");
+    }
+
+    #[test]
+    fn metrics_aggregate_avg_and_max_from_recorded_durations() {
+        let mut machine = init_machine_instance(checkout_definition()).unwrap();
+        let next = json!({ "type": "NEXT" });
+        let pay = json!({ "type": "PAY", "paymentId": "pay_1" });
+        send_machine_core(&mut machine, &next, "NEXT", 0.0).unwrap();
+        send_machine_core(&mut machine, &pay, "PAY", 0.0).unwrap();
+        let durations: Vec<f64> = machine
+            .history
+            .iter()
+            .map(|entry| entry.duration_ms)
+            .collect();
+        assert_eq!(durations.len(), 2);
+
+        let metrics = machine_metrics(&machine);
+
+        assert_eq!(metrics["machineId"], "checkout");
+        assert_eq!(metrics["historyAvailable"], true);
+        assert_eq!(metrics["historyTruncated"], false);
+        assert_eq!(metrics["transitionCount"], 2);
+        assert_eq!(
+            metrics["avgDurationMs"].as_f64().unwrap(),
+            (durations[0] + durations[1]) / 2.0
+        );
+        assert_eq!(
+            metrics["maxDurationMs"].as_f64().unwrap(),
+            durations[0].max(durations[1])
+        );
+    }
+
+    #[test]
+    fn metrics_report_history_unavailable_instead_of_zero_durations() {
+        let mut definition = checkout_definition();
+        definition["historyLimit"] = json!(0);
+        let mut machine = init_machine_instance(definition).unwrap();
+        let next = json!({ "type": "NEXT" });
+        send_machine_core(&mut machine, &next, "NEXT", 0.0).unwrap();
+        assert!(machine.history.is_empty());
+
+        let metrics = machine_metrics(&machine);
+
+        assert_eq!(metrics["historyAvailable"], false);
+        assert_eq!(metrics["historyTruncated"], true);
+        assert_eq!(metrics["transitionCount"], 0);
+        assert_eq!(metrics["avgDurationMs"], Value::Null);
+        assert_eq!(metrics["maxDurationMs"], Value::Null);
+    }
+
+    #[test]
+    fn metrics_flag_truncated_history_when_limit_evicts_entries() {
+        let mut definition = checkout_definition();
+        definition["historyLimit"] = json!(1);
+        let mut machine = init_machine_instance(definition).unwrap();
+        let next = json!({ "type": "NEXT" });
+        let pay = json!({ "type": "PAY", "paymentId": "pay_1" });
+        send_machine_core(&mut machine, &next, "NEXT", 0.0).unwrap();
+        send_machine_core(&mut machine, &pay, "PAY", 0.0).unwrap();
+
+        let metrics = machine_metrics(&machine);
+
+        assert_eq!(metrics["historyAvailable"], true);
+        assert_eq!(metrics["historyTruncated"], true);
+        assert_eq!(metrics["transitionCount"], 1);
+        assert_eq!(metrics["step"], 2);
+    }
+
+    #[test]
+    fn metrics_return_null_durations_without_transitions() {
+        let machine = init_machine_instance(checkout_definition()).unwrap();
+
+        let metrics = machine_metrics(&machine);
+
+        assert_eq!(metrics["state"], "cart");
+        assert_eq!(metrics["status"], "active");
+        assert_eq!(metrics["step"], 0);
+        assert_eq!(metrics["historyAvailable"], true);
+        assert_eq!(metrics["historyTruncated"], false);
+        assert_eq!(metrics["transitionCount"], 0);
+        assert_eq!(metrics["avgDurationMs"], Value::Null);
+        assert_eq!(metrics["maxDurationMs"], Value::Null);
     }
 }

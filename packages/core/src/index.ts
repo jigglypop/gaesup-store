@@ -402,6 +402,10 @@ export const GaesupCore = {
     await ensureReady();
     return wasm.get_metrics(storeId);
   },
+  async getMachineMetrics(machineId: string): Promise<MachineMetricsSnapshot> {
+    await ensureReady();
+    return (wasm as any).get_machine_metrics(machineId) as MachineMetricsSnapshot;
+  },
   async getRuntimeMetrics(): Promise<RuntimeMetricsSnapshot> {
     await ensureReady();
     return {
@@ -1132,6 +1136,18 @@ export interface MachineSnapshot<TContext = any> {
   history: MachineHistoryEntry[];
   changed: boolean;
   actions: MachineEffectDescriptor[];
+}
+
+export interface MachineMetricsSnapshot {
+  machineId: string;
+  state: string;
+  status: MachineStatus;
+  step: number;
+  historyAvailable: boolean;
+  historyTruncated: boolean;
+  transitionCount: number;
+  avgDurationMs: number | null;
+  maxDurationMs: number | null;
 }
 
 export interface MachineTransitionResult<TContext = any> {
