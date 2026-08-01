@@ -976,6 +976,165 @@ describe('machine actor API', () => {
   });
 });
 
+describe('machine:transitioned timeline audit', () => {
+  beforeEach(() => {
+    calls.stores.clear();
+    calls.machines.clear();
+    calls.dispatches.length = 0;
+  });
+
+  it('records a rejected machine:transitioned event with TRANSITION_NOT_FOUND when the event has no defined transition', async () => {
+    const actor = createActor(createMachine({
+      id: 'audit-no-transition',
+      initial: 'idle',
+      context: {},
+      states: {
+        idle: {
+          on: {
+            KNOWN: { target: 'active' }
+          }
+        },
+        active: {}
+      }
+    }));
+
+    await actor.start();
+    const before = GaesupCore.getRuntimeTimeline().length;
+    const result = await actor.send('UNKNOWN');
+    expect(result.accepted).toBe(false);
+
+    const events = GaesupCore.getRuntimeTimeline().slice(before);
+    const transitioned = events.filter((event) => event.type === 'machine:transitioned');
+    expect(transitioned).toHaveLength(1);
+    expect(transitioned[0]).toMatchObject({
+      type: 'machine:transitioned',
+      machineId: 'audit-no-transition',
+      event: 'UNKNOWN',
+      details: {
+        accepted: false,
+        rejectedReason: 'TRANSITION_NOT_FOUND'
+      }
+    });
+  });
+
+  it('records a rejected machine:transitioned event with GUARD_REJECTED when a named guard denies the transition', async () => {
+    const actor = createActor(createMachine({
+      id: 'audit-guard-rejected',
+      initial: 'draft',
+      context: { ready: false },
+      states: {
+        draft: {
+          on: {
+            NEXT: { target: 'review', guard: 'isReady' }
+          }
+        },
+        review: {}
+      }
+    }), {
+      guards: {
+        isReady: ({ context }) => context.ready === true
+      }
+    });
+
+    await actor.start();
+    const before = GaesupCore.getRuntimeTimeline().length;
+    const result = await actor.send('NEXT');
+    expect(result.accepted).toBe(false);
+
+    const events = GaesupCore.getRuntimeTimeline().slice(before);
+    const transitioned = events.filter((event) => event.type === 'machine:transitioned');
+    expect(transitioned).toHaveLength(1);
+    expect(transitioned[0]).toMatchObject({
+      type: 'machine:transitioned',
+      machineId: 'audit-guard-rejected',
+      event: 'NEXT',
+      details: {
+        accepted: false,
+        rejectedReason: 'GUARD_REJECTED'
+      }
+    });
+  });
+
+  it('records a machine:transitioned rollback event with the restored state and step count', async () => {
+    const actor = createActor(createMachine({
+      id: 'audit-rollback-flow',
+      initial: 'draft',
+      context: {},
+      states: {
+        draft: {
+          on: {
+            NEXT: { target: 'review' }
+          }
+        },
+        review: {}
+      }
+    }));
+
+    await actor.start();
+    const advanced = await actor.send('NEXT');
+    expect(advanced.snapshot.state).toBe('review');
+
+    const before = GaesupCore.getRuntimeTimeline().length;
+    const rolledBack = await actor.rollback();
+    expect(rolledBack.accepted).toBe(true);
+    expect(rolledBack.snapshot.state).toBe('draft');
+
+    const events = GaesupCore.getRuntimeTimeline().slice(before);
+    const transitioned = events.filter((event) => event.type === 'machine:transitioned');
+    expect(transitioned).toHaveLength(1);
+    expect(transitioned[0]).toMatchObject({
+      type: 'machine:transitioned',
+      machineId: 'audit-rollback-flow',
+      event: 'rollback',
+      details: {
+        accepted: true,
+        state: 'draft',
+        steps: 1
+      }
+    });
+  });
+
+  it('records an accepted machine:transitioned event with the resulting state, effect types and a numeric duration', async () => {
+    const actor = createActor(createMachine({
+      id: 'audit-accepted-flow',
+      initial: 'idle',
+      context: {},
+      states: {
+        idle: {
+          on: {
+            RUN: { target: 'done', action: 'sendEmail' }
+          }
+        },
+        done: { final: true }
+      }
+    }), {
+      effects: {
+        sendEmail: vi.fn(async () => ({ ok: true }))
+      }
+    });
+
+    await actor.start();
+    const before = GaesupCore.getRuntimeTimeline().length;
+    const result = await actor.send('RUN');
+    expect(result.accepted).toBe(true);
+
+    const events = GaesupCore.getRuntimeTimeline().slice(before);
+    const transitioned = events.filter((event) => event.type === 'machine:transitioned');
+    expect(transitioned).toHaveLength(1);
+    expect(transitioned[0]).toMatchObject({
+      type: 'machine:transitioned',
+      machineId: 'audit-accepted-flow',
+      event: 'RUN',
+      details: {
+        accepted: true,
+        state: 'done',
+        effects: ['sendEmail']
+      }
+    });
+    expect(typeof transitioned[0].durationMs).toBe('number');
+  });
+});
+
 describe('deployment drift guard', () => {
   beforeEach(() => {
     calls.stores.clear();
