@@ -646,12 +646,13 @@ function normalizeImportId(value: string) {
 }
 
 function isImportAllowed(item: WebAssembly.ModuleImportDescriptor, allowed: Set<string>) {
+  // Fail-closed: only explicit module+name pairs authorize an import. Bare `module`
+  // or bare `name` entries are ignored so the runtime stays in sync with the
+  // validator's exact-match semantics (validate_allowed_imports).
   const names = [
     `${item.module}.${item.name}`,
     `${item.module}/${item.name}`,
-    `${item.module}:${item.name}`,
-    item.module,
-    item.name
+    `${item.module}:${item.name}`
   ];
   return names.some((name) => allowed.has(name));
 }

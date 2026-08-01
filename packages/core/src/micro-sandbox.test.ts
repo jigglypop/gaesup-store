@@ -211,6 +211,36 @@ describe('validator/runtime allowlist contract', () => {
       expect((error as SandboxRuntimeError).details?.import).toBe('env.now_ms');
     }
   });
+
+  // Fail-closed contract: a bare module entry must NOT authorize every import of
+  // that module — only an explicit module+name pair may match.
+  it('rejects a bare module allowlist entry (module-only wildcards are not allowed)', async () => {
+    const module = await WebAssembly.compile(WASM_WITH_ENV_NOW_MS_IMPORT);
+    const imports = WebAssembly.Module.imports(module);
+
+    try {
+      assertAllowedWasmImports(imports, ['env']);
+      throw new Error('expected assertAllowedWasmImports to throw');
+    } catch (error) {
+      expect(error).toBeInstanceOf(SandboxRuntimeError);
+      expect((error as SandboxRuntimeError).code).toBe('IMPORT_NOT_ALLOWED');
+    }
+  });
+
+  // Fail-closed contract: a bare field name must NOT authorize that field across
+  // arbitrary modules — only an explicit module+name pair may match.
+  it('rejects a bare field-name allowlist entry (name-only wildcards are not allowed)', async () => {
+    const module = await WebAssembly.compile(WASM_WITH_ENV_NOW_MS_IMPORT);
+    const imports = WebAssembly.Module.imports(module);
+
+    try {
+      assertAllowedWasmImports(imports, ['now_ms']);
+      throw new Error('expected assertAllowedWasmImports to throw');
+    } catch (error) {
+      expect(error).toBeInstanceOf(SandboxRuntimeError);
+      expect((error as SandboxRuntimeError).code).toBe('IMPORT_NOT_ALLOWED');
+    }
+  });
 });
 
 type FakeWorkerMessage = {
