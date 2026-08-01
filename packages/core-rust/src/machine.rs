@@ -44,6 +44,17 @@ struct MachineCheckpoint {
 #[wasm_bindgen]
 pub fn create_machine(definition: JsValue) -> Result<String, JsValue> {
     let definition = from_js(definition)?;
+    let machine = init_machine_instance(definition).map_err(|message| js_error(&message))?;
+    let id = machine.id.clone();
+
+    MACHINES.with(|machines| {
+        machines.borrow_mut().insert(id.clone(), machine);
+    });
+
+    Ok(id)
+}
+
+fn init_machine_instance(definition: Value) -> Result<MachineInstance, String> {
     let id = definition
         .get("id")
         .and_then(Value::as_str)
@@ -52,7 +63,7 @@ pub fn create_machine(definition: JsValue) -> Result<String, JsValue> {
     let initial = definition
         .get("initial")
         .and_then(Value::as_str)
-        .ok_or_else(|| js_error("Machine definition requires initial"))?
+        .ok_or_else(|| "Machine definition requires initial".to_string())?
         .to_string();
     let context = definition
         .get("context")
@@ -60,7 +71,7 @@ pub fn create_machine(definition: JsValue) -> Result<String, JsValue> {
         .unwrap_or_else(|| Value::Object(Map::new()));
 
     if state_node(&definition, &initial).is_none() {
-        return Err(js_error(&format!("Initial state not found: {initial}")));
+        return Err(format!("Initial state not found: {initial}"));
     }
 
     let status = if is_final_state(&definition, &initial) {
@@ -70,23 +81,16 @@ pub fn create_machine(definition: JsValue) -> Result<String, JsValue> {
     }
     .to_string();
 
-    MACHINES.with(|machines| {
-        machines.borrow_mut().insert(
-            id.clone(),
-            MachineInstance {
-                id: id.clone(),
-                definition,
-                state: initial,
-                context,
-                status,
-                step: 0,
-                history: Vec::new(),
-                checkpoints: Vec::new(),
-            },
-        );
-    });
-
-    Ok(id)
+    Ok(MachineInstance {
+        id,
+        definition,
+        state: initial,
+        context,
+        status,
+        step: 0,
+        history: Vec::new(),
+        checkpoints: Vec::new(),
+    })
 }
 
 #[wasm_bindgen]
@@ -106,7 +110,7 @@ pub fn start_machine(machine_id: &str, context: JsValue) -> Result<JsValue, JsVa
 
 #[wasm_bindgen]
 pub fn send_machine(machine_id: &str, event: JsValue) -> Result<JsValue, JsValue> {
-    let start = js_sys::Date::now();
+    let start = now_ms();
     let event = from_js(event)?;
     let event_type = event
         .get("type")
@@ -119,91 +123,101 @@ pub fn send_machine(machine_id: &str, event: JsValue) -> Result<JsValue, JsValue
         let machine = machines
             .get_mut(machine_id)
             .ok_or_else(|| js_error(&format!("Machine not found: {machine_id}")))?;
-
-        if machine.status == "final" {
-            return to_js(&transition_result(
-                false,
-                machine,
-                "FINAL_STATE",
-                Vec::new(),
-            ));
-        }
-
-        let current_state = state_node(&machine.definition, &machine.state)
-            .ok_or_else(|| js_error(&format!("State not found: {}", machine.state)))?;
-        let Some(transition) = transition_for_event(current_state, &event_type) else {
-            return to_js(&transition_result(
-                false,
-                machine,
-                "TRANSITION_NOT_FOUND",
-                Vec::new(),
-            ));
-        };
-
-        if !guard_allows(&transition, &machine.context, &event) {
-            return to_js(&transition_result(
-                false,
-                machine,
-                "GUARD_REJECTED",
-                Vec::new(),
-            ));
-        }
-
-        let target = transition
-            .get("target")
-            .and_then(Value::as_str)
-            .unwrap_or(&machine.state)
-            .to_string();
-
-        if state_node(&machine.definition, &target).is_none() {
-            return Err(js_error(&format!("Target state not found: {target}")));
-        }
-
-        let checkpoint_limit = checkpoint_limit(&machine.definition);
-        if checkpoint_limit > 0 {
-            machine.checkpoints.push(MachineCheckpoint {
-                state: machine.state.clone(),
-                context: machine.context.clone(),
-                status: machine.status.clone(),
-                step: machine.step,
-                history: machine.history.clone(),
-            });
-            if machine.checkpoints.len() > checkpoint_limit {
-                machine.checkpoints.remove(0);
-            }
-        }
-
-        let from = machine.state.clone();
-        let mut next_context = machine.context.clone();
-        apply_assign(&mut next_context, &transition, &event);
-
-        let actions = collect_actions(&machine.definition, &from, &target, &transition, &event);
-        let duration = js_sys::Date::now() - start;
-        let history_limit = history_limit(&machine.definition);
-        if history_limit > 0 {
-            machine.history.push(MachineHistoryEntry {
-                from: from.clone(),
-                to: target.clone(),
-                event: event_type,
-                timestamp: now_ms(),
-                duration_ms: duration,
-            });
-            if machine.history.len() > history_limit {
-                machine.history.remove(0);
-            }
-        }
-
-        machine.state = target;
-        machine.context = next_context;
-        machine.step = machine.step.saturating_add(1);
-        machine.status = if is_final_state(&machine.definition, &machine.state) {
-            "final".to_string()
-        } else {
-            "active".to_string()
-        };
-
-        to_js(&transition_result(true, machine, "", actions))
+        let result = send_machine_core(machine, &event, &event_type, start)
+            .map_err(|message| js_error(&message))?;
+        to_js(&result)
     })
+}
+
+fn send_machine_core(
+    machine: &mut MachineInstance,
+    event: &Value,
+    event_type: &str,
+    start_ms: f64,
+) -> Result<Value, String> {
+    if machine.status == "final" {
+        return Ok(transition_result(
+            false,
+            machine,
+            "FINAL_STATE",
+            Vec::new(),
+        ));
+    }
+
+    let current_state = state_node(&machine.definition, &machine.state)
+        .ok_or_else(|| format!("State not found: {}", machine.state))?;
+    let Some(transition) = transition_for_event(current_state, event_type) else {
+        return Ok(transition_result(
+            false,
+            machine,
+            "TRANSITION_NOT_FOUND",
+            Vec::new(),
+        ));
+    };
+
+    if !guard_allows(&transition, &machine.context, event) {
+        return Ok(transition_result(
+            false,
+            machine,
+            "GUARD_REJECTED",
+            Vec::new(),
+        ));
+    }
+
+    let target = transition
+        .get("target")
+        .and_then(Value::as_str)
+        .unwrap_or(&machine.state)
+        .to_string();
+
+    if state_node(&machine.definition, &target).is_none() {
+        return Err(format!("Target state not found: {target}"));
+    }
+
+    let checkpoint_limit = checkpoint_limit(&machine.definition);
+    if checkpoint_limit > 0 {
+        machine.checkpoints.push(MachineCheckpoint {
+            state: machine.state.clone(),
+            context: machine.context.clone(),
+            status: machine.status.clone(),
+            step: machine.step,
+            history: machine.history.clone(),
+        });
+        if machine.checkpoints.len() > checkpoint_limit {
+            machine.checkpoints.remove(0);
+        }
+    }
+
+    let from = machine.state.clone();
+    let mut next_context = machine.context.clone();
+    apply_assign(&mut next_context, &transition, event);
+
+    let actions = collect_actions(&machine.definition, &from, &target, &transition, event);
+    let duration = now_ms() - start_ms;
+    let history_limit = history_limit(&machine.definition);
+    if history_limit > 0 {
+        machine.history.push(MachineHistoryEntry {
+            from: from.clone(),
+            to: target.clone(),
+            event: event_type.to_string(),
+            timestamp: now_ms(),
+            duration_ms: duration,
+        });
+        if machine.history.len() > history_limit {
+            machine.history.remove(0);
+        }
+    }
+
+    machine.state = target;
+    machine.context = next_context;
+    machine.step = machine.step.saturating_add(1);
+    machine.status = if is_final_state(&machine.definition, &machine.state) {
+        "final".to_string()
+    } else {
+        "active".to_string()
+    };
+
+    Ok(transition_result(true, machine, "", actions))
 }
 
 #[wasm_bindgen]
@@ -224,31 +238,35 @@ pub fn rollback_machine(machine_id: &str, steps: u32) -> Result<JsValue, JsValue
         let machine = machines
             .get_mut(machine_id)
             .ok_or_else(|| js_error(&format!("Machine not found: {machine_id}")))?;
-        let count = steps.max(1);
-        let mut checkpoint = None;
-        for _ in 0..count {
-            checkpoint = machine.checkpoints.pop();
-            if checkpoint.is_none() {
-                break;
-            }
-        }
-        let Some(checkpoint) = checkpoint else {
-            return to_js(&transition_result(
-                false,
-                machine,
-                "ROLLBACK_CHECKPOINT_NOT_FOUND",
-                Vec::new(),
-            ));
-        };
-
-        machine.state = checkpoint.state;
-        machine.context = checkpoint.context;
-        machine.status = checkpoint.status;
-        machine.step = checkpoint.step;
-        machine.history = checkpoint.history;
-
-        to_js(&transition_result(true, machine, "", Vec::new()))
+        to_js(&rollback_machine_core(machine, steps))
     })
+}
+
+fn rollback_machine_core(machine: &mut MachineInstance, steps: u32) -> Value {
+    let count = steps.max(1);
+    let mut checkpoint = None;
+    for _ in 0..count {
+        checkpoint = machine.checkpoints.pop();
+        if checkpoint.is_none() {
+            break;
+        }
+    }
+    let Some(checkpoint) = checkpoint else {
+        return transition_result(
+            false,
+            machine,
+            "ROLLBACK_CHECKPOINT_NOT_FOUND",
+            Vec::new(),
+        );
+    };
+
+    machine.state = checkpoint.state;
+    machine.context = checkpoint.context;
+    machine.status = checkpoint.status;
+    machine.step = checkpoint.step;
+    machine.history = checkpoint.history;
+
+    transition_result(true, machine, "", Vec::new())
 }
 
 #[wasm_bindgen]
@@ -668,5 +686,74 @@ mod tests {
 
         assert!(is_final_state(&definition, "done"));
         assert!(!is_final_state(&definition, "payment"));
+    }
+
+    #[test]
+    fn send_rejects_events_when_machine_is_final() {
+        let mut definition = checkout_definition();
+        definition["initial"] = json!("done");
+        let mut machine = init_machine_instance(definition).unwrap();
+        assert_eq!(machine.status, "final");
+
+        let event = json!({ "type": "NEXT" });
+        let result = send_machine_core(&mut machine, &event, "NEXT", 0.0).unwrap();
+
+        assert_eq!(result["accepted"], false);
+        assert_eq!(result["rejectedReason"], "FINAL_STATE");
+        assert_eq!(machine.state, "done");
+        assert_eq!(machine.step, 0);
+        assert!(machine.checkpoints.is_empty());
+    }
+
+    #[test]
+    fn rollback_fails_closed_without_checkpoints() {
+        let mut machine = init_machine_instance(checkout_definition()).unwrap();
+
+        let result = rollback_machine_core(&mut machine, 1);
+
+        assert_eq!(result["accepted"], false);
+        assert_eq!(result["rejectedReason"], "ROLLBACK_CHECKPOINT_NOT_FOUND");
+        assert_eq!(machine.state, "cart");
+        assert_eq!(machine.status, "active");
+        assert_eq!(machine.step, 0);
+    }
+
+    #[test]
+    fn rollback_restores_previous_state_context_and_status() {
+        let mut machine = init_machine_instance(checkout_definition()).unwrap();
+        let next = json!({ "type": "NEXT" });
+        let pay = json!({ "type": "PAY", "paymentId": "pay_1" });
+        send_machine_core(&mut machine, &next, "NEXT", 0.0).unwrap();
+        send_machine_core(&mut machine, &pay, "PAY", 0.0).unwrap();
+        assert_eq!(machine.state, "done");
+        assert_eq!(machine.status, "final");
+        assert_eq!(machine.context["paymentId"], "pay_1");
+        assert_eq!(machine.step, 2);
+
+        let result = rollback_machine_core(&mut machine, 1);
+
+        assert_eq!(result["accepted"], true);
+        assert_eq!(machine.state, "payment");
+        assert_eq!(machine.status, "active");
+        assert_eq!(machine.context["paymentId"], Value::Null);
+        assert_eq!(machine.step, 1);
+        assert_eq!(machine.history.len(), 1);
+    }
+
+    #[test]
+    fn checkpoint_limit_evicts_oldest_checkpoint_first() {
+        let mut definition = checkout_definition();
+        definition["checkpointLimit"] = json!(1);
+        let mut machine = init_machine_instance(definition).unwrap();
+        let next = json!({ "type": "NEXT" });
+        let pay = json!({ "type": "PAY", "paymentId": "pay_1" });
+
+        send_machine_core(&mut machine, &next, "NEXT", 0.0).unwrap();
+        assert_eq!(machine.checkpoints.len(), 1);
+        assert_eq!(machine.checkpoints[0].state, "cart");
+
+        send_machine_core(&mut machine, &pay, "PAY", 0.0).unwrap();
+        assert_eq!(machine.checkpoints.len(), 1);
+        assert_eq!(machine.checkpoints[0].state, "payment");
     }
 }
