@@ -1174,6 +1174,56 @@ describe('manifest integrity guard', () => {
   });
 });
 
+describe('allowedImports validation', () => {
+  it('blocks a manifest requesting an import outside the host allowlist', async () => {
+    await initGaesupCore();
+    const guard = new CompatibilityGuard({ allowedImports: ['env.log'] });
+
+    const result = guard.validate({
+      manifestVersion: '1.0',
+      name: 'shop-body',
+      version: '1.8.0',
+      allowedImports: ['env.log', 'env.exec']
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.errors[0].code).toBe('IMPORT_NOT_ALLOWED');
+    expect(result.errors[0].target).toBe('env.exec');
+    expect(result.errors[0].message).toContain('env.exec');
+  });
+
+  it('accepts a manifest whose imports are all within the host allowlist', async () => {
+    await initGaesupCore();
+    const guard = new CompatibilityGuard({ allowedImports: ['env.log', 'wasi_snapshot_preview1'] });
+
+    const result = guard.validate({
+      manifestVersion: '1.0',
+      name: 'shop-body',
+      version: '1.8.0',
+      allowedImports: ['env.log']
+    });
+
+    expect(result.valid).toBe(true);
+    expect(result.errors).toEqual([]);
+  });
+
+  it('blocks a manifest whose allowedImports contains an empty string entry', async () => {
+    await initGaesupCore();
+    const guard = new CompatibilityGuard({});
+
+    const result = guard.validate({
+      manifestVersion: '1.0',
+      name: 'shop-body',
+      version: '1.8.0',
+      allowedImports: ['env.log', '   ']
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.errors[0].code).toBe('MANIFEST_IMPORTS_INVALID');
+    expect(result.errors[0].target).toBe('allowedImports');
+  });
+});
+
 describe('manifest:validated timeline audit', () => {
   it('records a manifest:validated event with valid: true for a valid manifest via static validate', async () => {
     await initGaesupCore();
@@ -1411,6 +1461,42 @@ function validateManifestMock(manifest: any, host: any) {
       severity: 'error',
       target: 'integrity.signature'
     });
+  }
+
+  const declaredImports = manifest.allowedImports;
+  if (declaredImports !== undefined) {
+    if (!Array.isArray(declaredImports)) {
+      errors.push({
+        code: 'MANIFEST_IMPORTS_INVALID',
+        message: 'allowedImports must be an array of non-empty strings',
+        severity: 'error',
+        target: 'allowedImports'
+      });
+    } else {
+      const hostAllowlist = Array.isArray(host.allowedImports)
+        ? host.allowedImports.filter((item: any) => typeof item === 'string').map((item: string) => item.trim())
+        : null;
+      for (const entry of declaredImports) {
+        const value = typeof entry === 'string' ? entry.trim() : '';
+        if (!value) {
+          errors.push({
+            code: 'MANIFEST_IMPORTS_INVALID',
+            message: 'allowedImports entries must be non-empty strings',
+            severity: 'error',
+            target: 'allowedImports'
+          });
+          continue;
+        }
+        if (hostAllowlist && !hostAllowlist.includes(value)) {
+          errors.push({
+            code: 'IMPORT_NOT_ALLOWED',
+            message: `Import ${value} is not allowed by the host import allowlist`,
+            severity: 'error',
+            target: value
+          });
+        }
+      }
+    }
   }
 
   if (deployment) {

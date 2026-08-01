@@ -15,6 +15,7 @@ pub fn validate_manifest(manifest: JsValue, host: JsValue) -> Result<JsValue, Js
     validate_abi(&manifest, &host, &mut errors);
     validate_integrity(&manifest, &host, &mut errors);
     validate_signature(&manifest, &host, &mut errors);
+    validate_allowed_imports(&manifest, &host, &mut errors);
     validate_dependencies(&manifest, &host, &mut errors, &mut warnings);
     validate_stores(
         &manifest,
@@ -117,6 +118,54 @@ fn validate_signature(manifest: &Value, host: &Value, errors: &mut Vec<Value>) {
             "integrity.signature",
         )),
         _ => {}
+    }
+}
+
+fn validate_allowed_imports(manifest: &Value, host: &Value, errors: &mut Vec<Value>) {
+    let Some(declared) = manifest.get("allowedImports") else {
+        return;
+    };
+    let Some(entries) = declared.as_array() else {
+        errors.push(validation_issue(
+            "MANIFEST_IMPORTS_INVALID",
+            "allowedImports must be an array of non-empty strings",
+            "error",
+            "allowedImports",
+        ));
+        return;
+    };
+    let host_allowlist: Option<Vec<&str>> = host
+        .get("allowedImports")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::trim)
+                .collect()
+        });
+
+    for entry in entries {
+        let import = entry.as_str().map(str::trim).filter(|item| !item.is_empty());
+        let Some(import) = import else {
+            errors.push(validation_issue(
+                "MANIFEST_IMPORTS_INVALID",
+                "allowedImports entries must be non-empty strings",
+                "error",
+                "allowedImports",
+            ));
+            continue;
+        };
+        if let Some(allowlist) = &host_allowlist {
+            if !allowlist.contains(&import) {
+                errors.push(validation_issue(
+                    "IMPORT_NOT_ALLOWED",
+                    &format!("Import {import} is not allowed by the host import allowlist"),
+                    "error",
+                    import,
+                ));
+            }
+        }
     }
 }
 
@@ -1163,6 +1212,83 @@ mod tests {
         let mut errors = vec![];
 
         validate_signature(&manifest, &host, &mut errors);
+
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn imports_within_host_allowlist_pass() {
+        let manifest = json!({ "allowedImports": ["env.log", "wasi_snapshot_preview1"] });
+        let host = json!({ "allowedImports": ["env.log", "wasi_snapshot_preview1", "env.now"] });
+        let mut errors = vec![];
+
+        validate_allowed_imports(&manifest, &host, &mut errors);
+
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn imports_missing_from_host_allowlist_get_one_error_per_import() {
+        let manifest = json!({ "allowedImports": ["env.fetch", "env.exec"] });
+        let host = json!({ "allowedImports": ["env.log"] });
+        let mut errors = vec![];
+
+        validate_allowed_imports(&manifest, &host, &mut errors);
+
+        assert_eq!(errors.len(), 2);
+        assert_eq!(errors[0]["code"], "IMPORT_NOT_ALLOWED");
+        assert_eq!(errors[0]["target"], "env.fetch");
+        assert!(errors[0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("env.fetch"));
+        assert_eq!(errors[1]["code"], "IMPORT_NOT_ALLOWED");
+        assert_eq!(errors[1]["target"], "env.exec");
+    }
+
+    #[test]
+    fn blank_import_entry_is_rejected_as_invalid() {
+        let manifest = json!({ "allowedImports": ["env.log", "   "] });
+        let host = json!({});
+        let mut errors = vec![];
+
+        validate_allowed_imports(&manifest, &host, &mut errors);
+
+        assert_eq!(errors[0]["code"], "MANIFEST_IMPORTS_INVALID");
+        assert_eq!(errors[0]["target"], "allowedImports");
+    }
+
+    #[test]
+    fn non_string_import_entry_is_rejected_as_invalid() {
+        let manifest = json!({ "allowedImports": ["env.log", 42] });
+        let host = json!({});
+        let mut errors = vec![];
+
+        validate_allowed_imports(&manifest, &host, &mut errors);
+
+        assert_eq!(errors[0]["code"], "MANIFEST_IMPORTS_INVALID");
+        assert_eq!(errors[0]["target"], "allowedImports");
+    }
+
+    #[test]
+    fn non_array_allowed_imports_is_rejected_as_invalid() {
+        let manifest = json!({ "allowedImports": "env.log" });
+        let host = json!({});
+        let mut errors = vec![];
+
+        validate_allowed_imports(&manifest, &host, &mut errors);
+
+        assert_eq!(errors[0]["code"], "MANIFEST_IMPORTS_INVALID");
+        assert_eq!(errors[0]["target"], "allowedImports");
+    }
+
+    #[test]
+    fn any_import_passes_when_host_declares_no_allowlist() {
+        let manifest = json!({ "allowedImports": ["env.anything", "custom.module"] });
+        let host = json!({});
+        let mut errors = vec![];
+
+        validate_allowed_imports(&manifest, &host, &mut errors);
 
         assert!(errors.is_empty());
     }

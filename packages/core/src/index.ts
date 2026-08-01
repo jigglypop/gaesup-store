@@ -92,6 +92,7 @@ export interface HostCompatibilityConfig {
   deployment?: HostDeploymentContract;
   requireIntegrity?: boolean;
   requireSignature?: boolean;
+  allowedImports?: string[];
 }
 
 export interface ContainerPackageManifest {
