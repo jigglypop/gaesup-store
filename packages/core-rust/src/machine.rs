@@ -242,6 +242,20 @@ pub fn get_machine_metrics(machine_id: &str) -> Result<JsValue, JsValue> {
     })
 }
 
+#[wasm_bindgen]
+pub fn list_machine_metrics() -> Result<JsValue, JsValue> {
+    MACHINES.with(|machines| {
+        let machines = machines.borrow();
+        to_js(&list_machine_metrics_core(machines.values()))
+    })
+}
+
+fn list_machine_metrics_core<'a>(
+    machines: impl Iterator<Item = &'a MachineInstance>,
+) -> Vec<Value> {
+    machines.map(machine_metrics).collect()
+}
+
 fn machine_metrics(machine: &MachineInstance) -> Value {
     let transition_count = machine.history.len();
     let (avg_duration_ms, max_duration_ms) = if transition_count == 0 {
@@ -878,5 +892,36 @@ mod tests {
         assert_eq!(metrics["transitionCount"], 0);
         assert_eq!(metrics["avgDurationMs"], Value::Null);
         assert_eq!(metrics["maxDurationMs"], Value::Null);
+    }
+
+    #[test]
+    fn list_metrics_aggregates_every_machine_with_shared_metrics_shape() {
+        let mut first = init_machine_instance(checkout_definition()).unwrap();
+        let next = json!({ "type": "NEXT" });
+        send_machine_core(&mut first, &next, "NEXT", 0.0).unwrap();
+        let mut second_definition = checkout_definition();
+        second_definition["id"] = json!("checkout-2");
+        let second = init_machine_instance(second_definition).unwrap();
+
+        let metrics = list_machine_metrics_core([&first, &second].into_iter());
+
+        assert_eq!(metrics.len(), 2);
+        let for_id = |id: &str| {
+            metrics
+                .iter()
+                .find(|entry| entry["machineId"] == id)
+                .unwrap()
+        };
+        assert_eq!(*for_id("checkout"), machine_metrics(&first));
+        assert_eq!(for_id("checkout")["transitionCount"], 1);
+        assert_eq!(*for_id("checkout-2"), machine_metrics(&second));
+        assert_eq!(for_id("checkout-2")["transitionCount"], 0);
+    }
+
+    #[test]
+    fn list_metrics_return_empty_array_without_machines() {
+        let metrics = list_machine_metrics_core(std::iter::empty());
+
+        assert!(metrics.is_empty());
     }
 }

@@ -117,6 +117,19 @@ pub fn call_container(
 }
 
 #[wasm_bindgen]
+pub fn update_container_state(container_id: &str, state: JsValue) -> Result<JsValue, JsValue> {
+    let state = from_js(state)?;
+    CONTAINERS.with(|containers| {
+        let mut containers = containers.borrow_mut();
+        let container = containers
+            .get_mut(container_id)
+            .ok_or_else(|| js_error(&format!("Container not found: {container_id}")))?;
+        container.state = state.clone();
+        to_js(&state)
+    })
+}
+
+#[wasm_bindgen]
 pub fn get_container_state(container_id: &str) -> Result<JsValue, JsValue> {
     CONTAINERS.with(|containers| {
         let containers = containers.borrow();

@@ -1,122 +1,133 @@
-version: '3.8'
-
-# Gaesup-State WASM 컨테이너 오케스트레이션
+# MSA-style local topology for Gaesup frontend containers.
+#
+# Each slot service is intentionally small: it exposes one frontend container
+# manifest over HTTP, like an independently deployed unit. The host shell reads
+# the registry/release plan first, validates manifests, then mounts containers.
 services:
-  # WASM 컨테이너 레지스트리
-  registry:
-    image: gaesup/container-registry:latest
+  slot-registry:
+    image: nginx:1.27-alpine
     ports:
-      - "5000:5000"
-    environment:
-      - REGISTRY_STORAGE=filesystem
-      - REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY=/var/lib/registry
+      - "5000:80"
     volumes:
-      - registry-data:/var/lib/registry
+      - ../examples/monorepo-containers:/usr/share/nginx/html:ro
+    labels:
+      gaesup.role: "slot-registry"
+      gaesup.release: "web-2026-04-28.1"
     networks:
-      - gaesup-network
+      - gaesup-msa
 
-  # Todo 앱 WASM 컨테이너
-  todo-wasm:
-    build:
-      context: ../examples/wasm-containers/todo
-      dockerfile: Dockerfile.wasm
-      platforms:
-        - wasi/wasm
-    runtime: io.containerd.wasmedge.v1
-    platform: wasi/wasm
-    environment:
-      - GAESUP_RUNTIME=wasmedge
-      - GAESUP_MAX_MEMORY=50MB
-      - GAESUP_DEBUG=true
+  shell-wasm-state:
+    image: nginx:1.27-alpine
+    ports:
+      - "5101:80"
+    volumes:
+      - ../examples/monorepo-containers/containers/shell/manifest.json:/usr/share/nginx/html/manifest.json:ro
+    labels:
+      gaesup.role: "frontend-container"
+      gaesup.slot: "shell"
+      gaesup.runtime: "wasm-state-contract"
+      gaesup.release: "web-2026-04-28.1"
     networks:
-      - gaesup-network
+      - gaesup-msa
+
+  header-wasm-state:
+    image: nginx:1.27-alpine
+    ports:
+      - "5102:80"
+    volumes:
+      - ../examples/monorepo-containers/containers/header/manifest.json:/usr/share/nginx/html/manifest.json:ro
+    labels:
+      gaesup.role: "frontend-container"
+      gaesup.slot: "header"
+      gaesup.runtime: "wasm-state-contract"
+      gaesup.release: "web-2026-04-28.1"
+    networks:
+      - gaesup-msa
+
+  body-wasm-state:
+    image: nginx:1.27-alpine
+    ports:
+      - "5103:80"
+    volumes:
+      - ../examples/monorepo-containers/containers/body/manifest.json:/usr/share/nginx/html/manifest.json:ro
+    labels:
+      gaesup.role: "frontend-container"
+      gaesup.slot: "body"
+      gaesup.runtime: "wasm-state-contract"
+      gaesup.release: "web-2026-04-28.1"
+    networks:
+      - gaesup-msa
+
+  sidebar-wasm-state:
+    image: nginx:1.27-alpine
+    ports:
+      - "5104:80"
+    volumes:
+      - ../examples/monorepo-containers/containers/sidebar/manifest.json:/usr/share/nginx/html/manifest.json:ro
+    labels:
+      gaesup.role: "frontend-container"
+      gaesup.slot: "sidebar"
+      gaesup.runtime: "wasm-state-contract"
+      gaesup.release: "web-2026-04-28.1"
+    networks:
+      - gaesup-msa
+
+  contract-validator:
+    image: node:20-bookworm
+    working_dir: /workspace
+    command: >
+      sh -lc "corepack enable &&
+      corepack prepare pnpm@8.10.0 --activate &&
+      pnpm install --frozen-lockfile &&
+      pnpm --filter gaesup-state-core-rust run build:node &&
+      pnpm --filter @gaesup-example/monorepo-containers run validate"
+    volumes:
+      - ..:/workspace
+      - pnpm-store:/root/.local/share/pnpm/store
     depends_on:
-      - registry
-
-  # 카운터 WASM 컨테이너
-  counter-wasm:
-    build:
-      context: ../examples/wasm-containers/counter
-      dockerfile: Dockerfile.wasm
-      platforms:
-        - wasi/wasm
-    runtime: io.containerd.wasmtime.v1
-    platform: wasi/wasm
-    environment:
-      - GAESUP_RUNTIME=wasmtime
-      - GAESUP_MAX_MEMORY=20MB
+      - slot-registry
+      - shell-wasm-state
+      - header-wasm-state
+      - body-wasm-state
+      - sidebar-wasm-state
+    profiles:
+      - validate
     networks:
-      - gaesup-network
+      - gaesup-msa
 
-  # 벤치마크 WASM 컨테이너
-  benchmark-wasm:
-    build:
-      context: ../examples/wasm-containers/benchmark
-      dockerfile: Dockerfile.wasm
-      platforms:
-        - wasi/wasm
-    runtime: io.containerd.wasmer.v1
-    platform: wasi/wasm
-    environment:
-      - GAESUP_RUNTIME=wasmer
-      - GAESUP_MAX_MEMORY=200MB
-    networks:
-      - gaesup-network
-
-  # 프론트엔드 개발 서버
-  frontend:
-    build:
-      context: ../examples/todo-app
-      dockerfile: Dockerfile.dev
+  host-shell:
+    image: node:20-bookworm
+    working_dir: /workspace
+    command: >
+      sh -lc "corepack enable &&
+      corepack prepare pnpm@8.10.0 --activate &&
+      pnpm install --frozen-lockfile &&
+      pnpm run build:wasm &&
+      pnpm --filter @gaesup-state/multi-framework-demo run dev -- --host 0.0.0.0"
     ports:
       - "3000:3000"
     environment:
-      - VITE_GAESUP_REGISTRY=http://registry:5000
-      - VITE_WASM_CONTAINERS=todo-wasm:latest,counter-wasm:latest,benchmark-wasm:latest
+      VITE_GAESUP_RELEASE_PLAN_URL: "http://slot-registry/release-plan.json"
+      VITE_GAESUP_SLOT_REGISTRY_URL: "http://slot-registry"
+      VITE_GAESUP_SHELL_MANIFEST_URL: "http://shell-wasm-state/manifest.json"
+      VITE_GAESUP_HEADER_MANIFEST_URL: "http://header-wasm-state/manifest.json"
+      VITE_GAESUP_BODY_MANIFEST_URL: "http://body-wasm-state/manifest.json"
+      VITE_GAESUP_SIDEBAR_MANIFEST_URL: "http://sidebar-wasm-state/manifest.json"
     volumes:
-      - ../examples/todo-app/src:/app/src
-    networks:
-      - gaesup-network
+      - ..:/workspace
+      - pnpm-store:/root/.local/share/pnpm/store
     depends_on:
-      - registry
-      - todo-wasm
-      - counter-wasm
-      - benchmark-wasm
-
-  # 모니터링 대시보드
-  monitoring:
-    image: gaesup/monitoring-dashboard:latest
-    ports:
-      - "8080:8080"
-    environment:
-      - GAESUP_REGISTRY_URL=http://registry:5000
+      - slot-registry
+      - shell-wasm-state
+      - header-wasm-state
+      - body-wasm-state
+      - sidebar-wasm-state
     networks:
-      - gaesup-network
-    depends_on:
-      - registry
+      - gaesup-msa
 
 networks:
-  gaesup-network:
+  gaesup-msa:
     driver: bridge
-    ipam:
-      config:
-        - subnet: 172.20.0.0/16
 
 volumes:
-  registry-data:
-    driver: local
-
-# WASM 런타임 설정
-x-wasm-runtime-config: &wasm-runtime
-  security:
-    - no-new-privileges:true
-  read_only: true
-  tmpfs:
-    - /tmp:noexec,nosuid,size=10m
-  ulimits:
-    memlock:
-      soft: 67108864  # 64MB
-      hard: 67108864
-    nofile:
-      soft: 1024
-      hard: 1024 
+  pnpm-store:

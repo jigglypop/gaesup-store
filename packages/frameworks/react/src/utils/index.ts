@@ -55,6 +55,7 @@ export function validateContainer(config: ContainerConfig): ValidationResult {
   return {
     valid: errors.length === 0,
     errors,
-    warnings
+    warnings,
+    isolatedStores: []
   }
 } 
