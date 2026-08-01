@@ -523,6 +523,8 @@ describe('store runtime policies', () => {
     GaesupCore.clearStoreRuntimePolicy('orders-shadow-auto');
     GaesupCore.clearStoreRuntimePolicy('orders-migrate-auto');
     GaesupCore.clearStoreRuntimePolicy('orders-dual-auto');
+    GaesupCore.clearStoreRuntimePolicy('orders-isolated');
+    GaesupCore.clearStoreRuntimePolicy('orders-isolate-auto');
   });
 
   it('rejects writes for readonly stores', async () => {
@@ -547,6 +549,79 @@ describe('store runtime policies', () => {
     expect(calls.stores.get('orders').count).toBe(1);
     expect(calls.stores.get('orders-shadow').count).toBe(11);
     expect(GaesupCore.select('orders', 'count')).toBe(11);
+  });
+
+  it('isolate policy routes writes away from the original store', async () => {
+    await GaesupCore.createStore('orders', { count: 1 });
+    await GaesupCore.createStore('orders-isolated', { count: 100 });
+    GaesupCore.setStoreRuntimePolicy({
+      storeId: 'orders',
+      policy: 'isolate',
+      shadowStoreId: 'orders-isolated'
+    });
+
+    await GaesupCore.dispatch('orders', 'UPDATE', { path: 'count', value: 5 });
+
+    expect(calls.stores.get('orders').count).toBe(1);
+    expect(calls.stores.get('orders-isolated').count).toBe(5);
+    expect(GaesupCore.select('orders', 'count')).toBe(5);
+    expect(GaesupCore.getRuntimeTimeline().some((event) => (
+      event.type === 'store:isolated' &&
+      event.storeId === 'orders' &&
+      event.details?.shadowStoreId === 'orders-isolated'
+    ))).toBe(true);
+  });
+
+  it('isolate policy never dispatches to the original store id', async () => {
+    await GaesupCore.createStore('orders', { count: 1 });
+    await GaesupCore.createStore('orders-isolated', { count: 100 });
+    GaesupCore.setStoreRuntimePolicy({
+      storeId: 'orders',
+      policy: 'isolate',
+      shadowStoreId: 'orders-isolated'
+    });
+
+    await GaesupCore.dispatch('orders', 'UPDATE', { path: 'count', value: 5 });
+    await GaesupCore.dispatch('orders', 'UPDATE', { path: 'count', value: 6 });
+
+    const dispatchedStoreIds = calls.dispatches.map((item) => item.storeId);
+    expect(dispatchedStoreIds).toEqual(['orders-isolated', 'orders-isolated']);
+    expect(dispatchedStoreIds).not.toContain('orders');
+  });
+
+  it('applies manifest STORE_SCHEMA_ISOLATED warnings to isolate dispatch and select', async () => {
+    await GaesupCore.createStore('orders-isolate-auto', { count: 1 });
+    await GaesupCore.createStore('orders-isolate-auto:isolate', { count: 100 });
+
+    GaesupCore.applyManifestStorePolicies({
+      manifestVersion: '1.0',
+      name: 'isolate-widget',
+      version: '1.0.0',
+      stores: [
+        {
+          storeId: 'orders-isolate-auto',
+          schemaId: 'orders',
+          schemaVersion: '^2.0.0',
+          conflictPolicy: 'isolate'
+        }
+      ]
+    }, {
+      valid: true,
+      errors: [],
+      isolatedStores: ['orders-isolate-auto'],
+      warnings: [
+        { code: 'STORE_SCHEMA_ISOLATED', message: 'isolated', severity: 'warning', target: 'orders-isolate-auto' }
+      ]
+    });
+
+    await GaesupCore.dispatch('orders-isolate-auto', 'UPDATE', {
+      path: 'count',
+      value: 42
+    });
+
+    expect(calls.stores.get('orders-isolate-auto').count).toBe(1);
+    expect(calls.stores.get('orders-isolate-auto:isolate').count).toBe(42);
+    expect(GaesupCore.select('orders-isolate-auto', 'count')).toBe(42);
   });
 
   it('duplicates writes for dual-write stores', async () => {
