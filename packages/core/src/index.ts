@@ -90,6 +90,7 @@ export interface HostCompatibilityConfig {
   stores?: RegisteredStoreSchema[];
   accelerators?: HostAcceleratorContract[];
   deployment?: HostDeploymentContract;
+  requireIntegrity?: boolean;
 }
 
 export interface ContainerPackageManifest {
@@ -98,6 +99,7 @@ export interface ContainerPackageManifest {
   version: string;
   runtime?: string;
   gaesup?: { abiVersion: string; minHostVersion?: string };
+  integrity?: { hash?: string; signature?: string };
   dependencies?: PackageDependencyContract[];
   stores?: StoreDependencyContract[];
   accelerators?: AcceleratorDependencyContract[];

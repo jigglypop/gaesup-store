@@ -13,6 +13,7 @@ pub fn validate_manifest(manifest: JsValue, host: JsValue) -> Result<JsValue, Js
     let mut isolated_stores: Vec<Value> = Vec::new();
 
     validate_abi(&manifest, &host, &mut errors);
+    validate_integrity(&manifest, &host, &mut errors);
     validate_dependencies(&manifest, &host, &mut errors, &mut warnings);
     validate_stores(
         &manifest,
@@ -56,6 +57,48 @@ fn validate_abi(manifest: &Value, host: &Value, errors: &mut Vec<Value>) {
             ));
         }
     }
+}
+
+fn validate_integrity(manifest: &Value, host: &Value, errors: &mut Vec<Value>) {
+    let hash = manifest.pointer("/integrity/hash").and_then(Value::as_str);
+    let require_integrity = host
+        .get("requireIntegrity")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+
+    match hash {
+        Some(hash) if !hash.is_empty() => {
+            if !integrity_hash_is_well_formed(hash) {
+                errors.push(validation_issue(
+                    "MANIFEST_HASH_INVALID",
+                    &format!("Integrity hash {hash} is not a valid <algo>-<hexdigest> value"),
+                    "error",
+                    "integrity.hash",
+                ));
+            }
+        }
+        _ if require_integrity => errors.push(validation_issue(
+            "MANIFEST_INTEGRITY_MISSING",
+            "Host requires manifest integrity but no integrity.hash was declared",
+            "error",
+            "integrity.hash",
+        )),
+        _ => {}
+    }
+}
+
+fn integrity_hash_is_well_formed(hash: &str) -> bool {
+    let Some((algorithm, digest)) = hash.split_once('-') else {
+        return false;
+    };
+    let expected_length = match algorithm {
+        "sha256" => 64,
+        "sha384" => 96,
+        "sha512" => 128,
+        _ => return false,
+    };
+    digest.len() == expected_length
+        && digest.chars().all(|character| character.is_ascii_hexdigit())
 }
 
 fn validate_dependencies(
@@ -934,6 +977,75 @@ mod tests {
         assert_eq!(errors.len(), 2);
         assert_eq!(errors[0]["code"], "DEPLOYMENT_SLOT_VERSION_MISMATCH");
         assert_eq!(errors[1]["code"], "DEPLOYMENT_SLOT_CONTRACT_MISMATCH");
+    }
+
+    #[test]
+    fn integrity_hash_with_valid_sha256_passes() {
+        let manifest = json!({
+            "integrity": { "hash": format!("sha256-{}", "a1B2c3D4".repeat(8)) }
+        });
+        let host = json!({ "requireIntegrity": true });
+        let mut errors = vec![];
+
+        validate_integrity(&manifest, &host, &mut errors);
+
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn integrity_hash_with_bad_format_is_rejected() {
+        let non_hex_digest = format!("sha256-{}", "g".repeat(64));
+        let missing_algorithm = "0".repeat(64);
+        for bad_hash in [
+            "sha256-zz",
+            "md5-0123456789abcdef",
+            "not-a-hash",
+            non_hex_digest.as_str(),
+            missing_algorithm.as_str(),
+        ] {
+            let manifest = json!({ "integrity": { "hash": bad_hash } });
+            let host = json!({});
+            let mut errors = vec![];
+
+            validate_integrity(&manifest, &host, &mut errors);
+
+            assert_eq!(errors[0]["code"], "MANIFEST_HASH_INVALID", "{bad_hash}");
+            assert_eq!(errors[0]["target"], "integrity.hash");
+        }
+    }
+
+    #[test]
+    fn missing_integrity_hash_is_error_when_host_requires_integrity() {
+        let manifest = json!({ "name": "shop-body" });
+        let host = json!({ "requireIntegrity": true });
+        let mut errors = vec![];
+
+        validate_integrity(&manifest, &host, &mut errors);
+
+        assert_eq!(errors[0]["code"], "MANIFEST_INTEGRITY_MISSING");
+        assert_eq!(errors[0]["target"], "integrity.hash");
+    }
+
+    #[test]
+    fn empty_integrity_hash_is_error_when_host_requires_integrity() {
+        let manifest = json!({ "integrity": { "hash": "" } });
+        let host = json!({ "requireIntegrity": true });
+        let mut errors = vec![];
+
+        validate_integrity(&manifest, &host, &mut errors);
+
+        assert_eq!(errors[0]["code"], "MANIFEST_INTEGRITY_MISSING");
+    }
+
+    #[test]
+    fn missing_integrity_hash_passes_when_host_does_not_require_integrity() {
+        let manifest = json!({ "name": "shop-body" });
+        let host = json!({});
+        let mut errors = vec![];
+
+        validate_integrity(&manifest, &host, &mut errors);
+
+        assert!(errors.is_empty());
     }
 
     #[test]

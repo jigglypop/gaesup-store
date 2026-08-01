@@ -1005,6 +1005,54 @@ describe('deployment drift guard', () => {
   });
 });
 
+describe('manifest integrity guard', () => {
+  it('blocks a manifest without an integrity hash when the host requires integrity', async () => {
+    await initGaesupCore();
+    const guard = new CompatibilityGuard({ requireIntegrity: true });
+
+    const result = guard.validate({
+      manifestVersion: '1.0',
+      name: 'shop-body',
+      version: '1.8.0'
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.errors[0].code).toBe('MANIFEST_INTEGRITY_MISSING');
+    expect(result.errors[0].target).toBe('integrity.hash');
+  });
+
+  it('accepts a manifest with a valid sha256 integrity hash', async () => {
+    await initGaesupCore();
+    const guard = new CompatibilityGuard({ requireIntegrity: true });
+
+    const result = guard.validate({
+      manifestVersion: '1.0',
+      name: 'shop-body',
+      version: '1.8.0',
+      integrity: { hash: `sha256-${'a1b2c3d4'.repeat(8)}` }
+    });
+
+    expect(result.valid).toBe(true);
+    expect(result.errors).toEqual([]);
+  });
+
+  it('blocks a manifest whose integrity hash has a malformed digest', async () => {
+    await initGaesupCore();
+    const guard = new CompatibilityGuard({});
+
+    const result = guard.validate({
+      manifestVersion: '1.0',
+      name: 'shop-body',
+      version: '1.8.0',
+      integrity: { hash: 'sha256-not-hex' }
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.errors[0].code).toBe('MANIFEST_HASH_INVALID');
+    expect(result.errors[0].target).toBe('integrity.hash');
+  });
+});
+
 function flattenMutations(dispatches: Array<{ storeId: string; actionType: string; payload: any }>) {
   return dispatches.flatMap((dispatch) => {
     if (dispatch.actionType !== 'BATCH') return [dispatch];
@@ -1051,6 +1099,25 @@ function validateManifestMock(manifest: any, host: any) {
   const warnings: any[] = [];
   const deployment = manifest.deployment;
   const hostDeployment = host.deployment;
+
+  const integrityHash = manifest.integrity?.hash;
+  if (integrityHash) {
+    if (!integrityHashIsWellFormedMock(integrityHash)) {
+      errors.push({
+        code: 'MANIFEST_HASH_INVALID',
+        message: `Integrity hash ${integrityHash} is not a valid <algo>-<hexdigest> value`,
+        severity: 'error',
+        target: 'integrity.hash'
+      });
+    }
+  } else if (host.requireIntegrity) {
+    errors.push({
+      code: 'MANIFEST_INTEGRITY_MISSING',
+      message: 'Host requires manifest integrity but no integrity.hash was declared',
+      severity: 'error',
+      target: 'integrity.hash'
+    });
+  }
 
   if (deployment) {
     const strictRelease = hostDeployment?.strictRelease ?? Boolean(hostDeployment?.releaseId);
@@ -1145,6 +1212,15 @@ function resolveMachineExpressionMock(expression: any, context: any, event: any)
     return getPath(context, expression.slice('$context.'.length));
   }
   return structuredClone(expression);
+}
+
+function integrityHashIsWellFormedMock(hash: string) {
+  const separator = hash.indexOf('-');
+  if (separator <= 0) return false;
+  const digestLengths: Record<string, number> = { sha256: 64, sha384: 96, sha512: 128 };
+  const expectedLength = digestLengths[hash.slice(0, separator)];
+  const digest = hash.slice(separator + 1);
+  return Boolean(expectedLength) && digest.length === expectedLength && /^[0-9a-fA-F]+$/.test(digest);
 }
 
 function versionSatisfiesMock(provided: string | undefined, required: string) {
