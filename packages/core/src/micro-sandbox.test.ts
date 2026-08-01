@@ -25,6 +25,15 @@ const WASM_WITH_IMPORT = new Uint8Array([
   0x02, 0x0e, 0x01, 0x03, 0x65, 0x6e, 0x76, 0x06, 0x73, 0x65, 0x63, 0x72, 0x65, 0x74, 0x00, 0x00
 ]);
 
+// Same shape as WASM_WITH_IMPORT but with import module "env" / field "now_ms"
+// (also 6 bytes, so the import-section length prefix is unchanged) — used to
+// mirror a manifest `allowedImports: ['env.now_ms']` entry a validator would accept.
+const WASM_WITH_ENV_NOW_MS_IMPORT = new Uint8Array([
+  0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
+  0x01, 0x04, 0x01, 0x60, 0x00, 0x00,
+  0x02, 0x0e, 0x01, 0x03, 0x65, 0x6e, 0x76, 0x06, 0x6e, 0x6f, 0x77, 0x5f, 0x6d, 0x73, 0x00, 0x00
+]);
+
 describe('micro sandbox runtime primitives', () => {
   it('tracks frontend containers by route, region, and layer', () => {
     const coordinate = resolveSandboxCoordinate({
@@ -163,6 +172,44 @@ describe('micro sandbox runtime primitives', () => {
     });
 
     expect(workerCreated).toBe(false);
+  });
+});
+
+// Contract: `validate_allowed_imports` (packages/core-rust/src/compatibility.rs) trims each
+// manifest `allowedImports` entry and requires an exact-match against the host allowlist
+// before it emits `IMPORT_NOT_ALLOWED`. `assertAllowedWasmImports` is the runtime-side gate
+// that WASM instantiation actually goes through, and it must agree with the validator on
+// which allowlist strings authorize which imports. If either side's allowlist semantics
+// drift (e.g. the validator starts allowing a format the runtime rejects, or the runtime
+// stops trimming), these tests should fail.
+describe('validator/runtime allowlist contract', () => {
+  it('allows a WASM import when the allowlist entry is the "module.name" form the validator accepts', async () => {
+    const module = await WebAssembly.compile(WASM_WITH_ENV_NOW_MS_IMPORT);
+    const imports = WebAssembly.Module.imports(module);
+
+    expect(() => assertAllowedWasmImports(imports, ['env.now_ms'])).not.toThrow();
+  });
+
+  it('treats allowlist entries as trimmed, matching the validator\'s trim-then-exact-match semantics', async () => {
+    const module = await WebAssembly.compile(WASM_WITH_ENV_NOW_MS_IMPORT);
+    const imports = WebAssembly.Module.imports(module);
+
+    expect(() => assertAllowedWasmImports(imports, ['  env.now_ms  '])).not.toThrow();
+  });
+
+  it('fails closed (throws, surfacing the import identifier) for an import absent from the allowlist', async () => {
+    const module = await WebAssembly.compile(WASM_WITH_ENV_NOW_MS_IMPORT);
+    const imports = WebAssembly.Module.imports(module);
+
+    expect(() => assertAllowedWasmImports(imports, ['env.other_allowed_fn'])).toThrow(SandboxRuntimeError);
+    try {
+      assertAllowedWasmImports(imports, ['env.other_allowed_fn']);
+      throw new Error('expected assertAllowedWasmImports to throw');
+    } catch (error) {
+      expect(error).toBeInstanceOf(SandboxRuntimeError);
+      expect((error as SandboxRuntimeError).code).toBe('IMPORT_NOT_ALLOWED');
+      expect((error as SandboxRuntimeError).details?.import).toBe('env.now_ms');
+    }
   });
 });
 
