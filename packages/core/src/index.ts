@@ -189,6 +189,7 @@ export type RuntimeTimelineEventType =
   | 'container:stopped'
   | 'store:attached'
   | 'store:isolated'
+  | 'store:conflict-rejected'
   | 'store:transitioned'
   | 'machine:transitioned'
   | 'effect:requested'
@@ -435,6 +436,15 @@ export const GaesupCore = {
   ) {
     if (!validation.valid) {
       const error = new Error(validation.errors[0]?.message || `Manifest ${manifest.name} failed validation`);
+      for (const conflict of validation.errors.filter((issue) => issue.code === 'STORE_SCHEMA_CONFLICT')) {
+        pushRuntimeEvent({
+          type: 'store:conflict-rejected',
+          storeId: conflict.target,
+          code: 'STORE_SCHEMA_CONFLICT',
+          message: conflict.message,
+          details: { manifest: manifest.name }
+        });
+      }
       pushRuntimeEvent({
         type: 'runtime:error',
         code: validation.errors[0]?.code || 'MANIFEST_VALIDATION_FAILED',

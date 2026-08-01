@@ -1162,6 +1162,97 @@ describe('manifest:validated timeline audit', () => {
   });
 });
 
+describe('store:conflict-rejected audit', () => {
+  it('records a store:conflict-rejected event when a reject-policy store schema conflicts', async () => {
+    await initGaesupCore();
+    const guard = new CompatibilityGuard({
+      stores: [
+        { storeId: 'orders-conflict', schemaId: 'orders', schemaVersion: '1.0.0' }
+      ]
+    });
+    const manifest = {
+      manifestVersion: '1.0',
+      name: 'conflict-widget',
+      version: '1.0.0',
+      stores: [
+        { storeId: 'orders-conflict', schemaId: 'orders', schemaVersion: '^2.0.0' }
+      ]
+    };
+
+    const validation = guard.validate(manifest);
+    expect(validation.valid).toBe(false);
+    expect(validation.errors[0].code).toBe('STORE_SCHEMA_CONFLICT');
+
+    const before = GaesupCore.getRuntimeTimeline().length;
+    expect(() => GaesupCore.applyManifestStorePolicies(manifest, validation)).toThrow('schema version mismatch');
+
+    const events = GaesupCore.getRuntimeTimeline().slice(before);
+    expect(events).toHaveLength(2);
+    expect(events[0]).toMatchObject({
+      type: 'store:conflict-rejected',
+      storeId: 'orders-conflict',
+      code: 'STORE_SCHEMA_CONFLICT',
+      details: { manifest: 'conflict-widget' }
+    });
+    expect(events[1].type).toBe('runtime:error');
+  });
+
+  it('records one store:conflict-rejected event per conflicting store', async () => {
+    await initGaesupCore();
+    const guard = new CompatibilityGuard({
+      stores: [
+        { storeId: 'orders-conflict-a', schemaId: 'orders', schemaVersion: '1.0.0' },
+        { storeId: 'orders-conflict-b', schemaId: 'orders', schemaVersion: '1.0.0' }
+      ]
+    });
+    const manifest = {
+      manifestVersion: '1.0',
+      name: 'conflict-widget-multi',
+      version: '1.0.0',
+      stores: [
+        { storeId: 'orders-conflict-a', schemaId: 'orders', schemaVersion: '^2.0.0' },
+        { storeId: 'orders-conflict-b', schemaId: 'orders', schemaVersion: '^3.0.0' }
+      ]
+    };
+
+    const validation = guard.validate(manifest);
+    expect(validation.valid).toBe(false);
+
+    const before = GaesupCore.getRuntimeTimeline().length;
+    expect(() => GaesupCore.applyManifestStorePolicies(manifest, validation)).toThrow('schema version mismatch');
+
+    const events = GaesupCore.getRuntimeTimeline().slice(before);
+    const rejected = events.filter((event) => event.type === 'store:conflict-rejected');
+    expect(rejected).toHaveLength(2);
+    expect(rejected.map((event) => event.storeId)).toEqual(['orders-conflict-a', 'orders-conflict-b']);
+  });
+
+  it('does not record store:conflict-rejected for non-conflict validation failures', async () => {
+    await initGaesupCore();
+    const guard = new CompatibilityGuard({ requireIntegrity: true });
+    const manifest = {
+      manifestVersion: '1.0',
+      name: 'integrity-widget',
+      version: '1.0.0'
+    };
+
+    const validation = guard.validate(manifest);
+    expect(validation.valid).toBe(false);
+    expect(validation.errors[0].code).toBe('MANIFEST_INTEGRITY_MISSING');
+
+    const before = GaesupCore.getRuntimeTimeline().length;
+    expect(() => GaesupCore.applyManifestStorePolicies(manifest, validation)).toThrow();
+
+    const events = GaesupCore.getRuntimeTimeline().slice(before);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      type: 'runtime:error',
+      code: 'MANIFEST_INTEGRITY_MISSING'
+    });
+    expect(events.some((event) => event.type === 'store:conflict-rejected')).toBe(false);
+  });
+});
+
 function flattenMutations(dispatches: Array<{ storeId: string; actionType: string; payload: any }>) {
   return dispatches.flatMap((dispatch) => {
     if (dispatch.actionType !== 'BATCH') return [dispatch];
@@ -1293,6 +1384,22 @@ function validateManifestMock(manifest: any, host: any) {
           target: requirement.slot
         });
       }
+    }
+  }
+
+  for (const store of manifest.stores || []) {
+    const policy = store.conflictPolicy || host.defaultConflictPolicy || 'reject';
+    const hostStore = host.stores?.find((item: any) => item.storeId === store.storeId);
+    if (!hostStore) continue;
+    const compatible = hostStore.schemaId === store.schemaId &&
+      versionSatisfiesMock(hostStore.schemaVersion, store.schemaVersion || '*');
+    if (!compatible && policy === 'reject') {
+      errors.push({
+        code: 'STORE_SCHEMA_CONFLICT',
+        message: `Store ${store.storeId} schema version mismatch: requires ${store.schemaVersion || '*'}, host provides ${hostStore.schemaVersion}`,
+        severity: 'error',
+        target: store.storeId
+      });
     }
   }
 
