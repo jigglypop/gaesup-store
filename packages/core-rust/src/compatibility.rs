@@ -14,6 +14,7 @@ pub fn validate_manifest(manifest: JsValue, host: JsValue) -> Result<JsValue, Js
 
     validate_abi(&manifest, &host, &mut errors);
     validate_integrity(&manifest, &host, &mut errors);
+    validate_signature(&manifest, &host, &mut errors);
     validate_dependencies(&manifest, &host, &mut errors, &mut warnings);
     validate_stores(
         &manifest,
@@ -85,6 +86,63 @@ fn validate_integrity(manifest: &Value, host: &Value, errors: &mut Vec<Value>) {
         )),
         _ => {}
     }
+}
+
+fn validate_signature(manifest: &Value, host: &Value, errors: &mut Vec<Value>) {
+    let signature = manifest
+        .pointer("/integrity/signature")
+        .and_then(Value::as_str);
+    let require_signature = host
+        .get("requireSignature")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+
+    match signature {
+        Some(signature) if !signature.is_empty() => {
+            if !integrity_signature_is_well_formed(signature) {
+                errors.push(validation_issue(
+                    "MANIFEST_SIGNATURE_INVALID",
+                    &format!(
+                        "Integrity signature {signature} is not a valid <scheme>-<base64payload> value"
+                    ),
+                    "error",
+                    "integrity.signature",
+                ));
+            }
+        }
+        _ if require_signature => errors.push(validation_issue(
+            "MANIFEST_SIGNATURE_MISSING",
+            "Host requires a manifest signature but no integrity.signature was declared",
+            "error",
+            "integrity.signature",
+        )),
+        _ => {}
+    }
+}
+
+const SIGNATURE_SCHEMES: [&str; 3] = ["ed25519", "ecdsa-p256", "rsa-sha256"];
+
+fn integrity_signature_is_well_formed(signature: &str) -> bool {
+    SIGNATURE_SCHEMES
+        .iter()
+        .find_map(|scheme| {
+            signature
+                .strip_prefix(scheme)
+                .and_then(|rest| rest.strip_prefix('-'))
+        })
+        .is_some_and(signature_payload_is_base64)
+}
+
+fn signature_payload_is_base64(payload: &str) -> bool {
+    if payload.is_empty() || payload.len() % 4 != 0 {
+        return false;
+    }
+    let body = payload.trim_end_matches('=');
+    payload.len() - body.len() <= 2
+        && !body.is_empty()
+        && body
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || character == '+' || character == '/')
 }
 
 fn integrity_hash_is_well_formed(hash: &str) -> bool {
@@ -1044,6 +1102,67 @@ mod tests {
         let mut errors = vec![];
 
         validate_integrity(&manifest, &host, &mut errors);
+
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn integrity_signature_with_valid_scheme_and_base64_payload_passes() {
+        for good_signature in [
+            "ed25519-dGVzdC1zaWduYXR1cmU=",
+            "ecdsa-p256-QUJDRA==",
+            "rsa-sha256-QUJDRA==",
+        ] {
+            let manifest = json!({ "integrity": { "signature": good_signature } });
+            let host = json!({ "requireSignature": true });
+            let mut errors = vec![];
+
+            validate_signature(&manifest, &host, &mut errors);
+
+            assert!(errors.is_empty(), "{good_signature}");
+        }
+    }
+
+    #[test]
+    fn integrity_signature_with_bad_format_is_rejected() {
+        for bad_signature in [
+            "md5-QUJDRA==",
+            "QUJDRA==",
+            "ed25519-",
+            "ed25519-not_base64!",
+            "ed25519-abc",
+            "ed25519-====",
+        ] {
+            let manifest = json!({ "integrity": { "signature": bad_signature } });
+            let host = json!({});
+            let mut errors = vec![];
+
+            validate_signature(&manifest, &host, &mut errors);
+
+            assert_eq!(errors[0]["code"], "MANIFEST_SIGNATURE_INVALID", "{bad_signature}");
+            assert_eq!(errors[0]["target"], "integrity.signature");
+        }
+    }
+
+    #[test]
+    fn missing_integrity_signature_is_error_when_host_requires_signature() {
+        let manifest = json!({ "integrity": { "signature": "" } });
+        let host = json!({ "requireSignature": true });
+        let mut errors = vec![];
+
+        validate_signature(&manifest, &host, &mut errors);
+
+        assert_eq!(errors[0]["code"], "MANIFEST_SIGNATURE_MISSING");
+        assert_eq!(errors[0]["target"], "integrity.signature");
+    }
+
+    #[test]
+    fn missing_integrity_signature_passes_when_host_does_not_require_signature() {
+        let manifest = json!({ "name": "shop-body" });
+        let host = json!({ "requireIntegrity": true });
+        let mut errors = vec![];
+
+        validate_signature(&manifest, &host, &mut errors);
 
         assert!(errors.is_empty());
     }

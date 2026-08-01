@@ -91,6 +91,7 @@ export interface HostCompatibilityConfig {
   accelerators?: HostAcceleratorContract[];
   deployment?: HostDeploymentContract;
   requireIntegrity?: boolean;
+  requireSignature?: boolean;
 }
 
 export interface ContainerPackageManifest {

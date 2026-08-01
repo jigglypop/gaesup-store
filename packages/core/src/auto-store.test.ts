@@ -1051,6 +1051,52 @@ describe('manifest integrity guard', () => {
     expect(result.errors[0].code).toBe('MANIFEST_HASH_INVALID');
     expect(result.errors[0].target).toBe('integrity.hash');
   });
+
+  it('blocks a manifest without an integrity signature when the host requires a signature', async () => {
+    await initGaesupCore();
+    const guard = new CompatibilityGuard({ requireSignature: true });
+
+    const result = guard.validate({
+      manifestVersion: '1.0',
+      name: 'shop-body',
+      version: '1.8.0'
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.errors[0].code).toBe('MANIFEST_SIGNATURE_MISSING');
+    expect(result.errors[0].target).toBe('integrity.signature');
+  });
+
+  it('accepts a manifest with a valid ed25519 integrity signature', async () => {
+    await initGaesupCore();
+    const guard = new CompatibilityGuard({ requireSignature: true });
+
+    const result = guard.validate({
+      manifestVersion: '1.0',
+      name: 'shop-body',
+      version: '1.8.0',
+      integrity: { signature: 'ed25519-dGVzdC1zaWduYXR1cmU=' }
+    });
+
+    expect(result.valid).toBe(true);
+    expect(result.errors).toEqual([]);
+  });
+
+  it('blocks a manifest whose integrity signature uses an unsupported scheme', async () => {
+    await initGaesupCore();
+    const guard = new CompatibilityGuard({});
+
+    const result = guard.validate({
+      manifestVersion: '1.0',
+      name: 'shop-body',
+      version: '1.8.0',
+      integrity: { signature: 'md5-QUJDRA==' }
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.errors[0].code).toBe('MANIFEST_SIGNATURE_INVALID');
+    expect(result.errors[0].target).toBe('integrity.signature');
+  });
 });
 
 function flattenMutations(dispatches: Array<{ storeId: string; actionType: string; payload: any }>) {
@@ -1116,6 +1162,25 @@ function validateManifestMock(manifest: any, host: any) {
       message: 'Host requires manifest integrity but no integrity.hash was declared',
       severity: 'error',
       target: 'integrity.hash'
+    });
+  }
+
+  const integritySignature = manifest.integrity?.signature;
+  if (integritySignature) {
+    if (!integritySignatureIsWellFormedMock(integritySignature)) {
+      errors.push({
+        code: 'MANIFEST_SIGNATURE_INVALID',
+        message: `Integrity signature ${integritySignature} is not a valid <scheme>-<base64payload> value`,
+        severity: 'error',
+        target: 'integrity.signature'
+      });
+    }
+  } else if (host.requireSignature) {
+    errors.push({
+      code: 'MANIFEST_SIGNATURE_MISSING',
+      message: 'Host requires a manifest signature but no integrity.signature was declared',
+      severity: 'error',
+      target: 'integrity.signature'
     });
   }
 
@@ -1221,6 +1286,15 @@ function integrityHashIsWellFormedMock(hash: string) {
   const expectedLength = digestLengths[hash.slice(0, separator)];
   const digest = hash.slice(separator + 1);
   return Boolean(expectedLength) && digest.length === expectedLength && /^[0-9a-fA-F]+$/.test(digest);
+}
+
+function integritySignatureIsWellFormedMock(signature: string) {
+  const scheme = ['ed25519', 'ecdsa-p256', 'rsa-sha256'].find((known) => signature.startsWith(`${known}-`));
+  if (!scheme) return false;
+  const payload = signature.slice(scheme.length + 1);
+  if (!payload || payload.length % 4 !== 0) return false;
+  const body = payload.replace(/=+$/, '');
+  return payload.length - body.length <= 2 && body.length > 0 && /^[A-Za-z0-9+/]+$/.test(body);
 }
 
 function versionSatisfiesMock(provided: string | undefined, required: string) {
