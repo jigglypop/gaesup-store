@@ -1663,6 +1663,73 @@ describe('store:conflict-rejected audit', () => {
   });
 });
 
+describe('runtime timeline subscription and drop counter', () => {
+  it('delivers pushed events to subscribed listeners and stops after unsubscribe', () => {
+    const received: any[] = [];
+    const unsubscribe = GaesupCore.subscribeRuntimeTimeline((event) => received.push(event));
+    try {
+      GaesupCore.recordRuntimeEvent({ type: 'runtime:error', code: 'SUB_TEST_FIRST' });
+      expect(received).toHaveLength(1);
+      expect(received[0]).toMatchObject({ type: 'runtime:error', code: 'SUB_TEST_FIRST' });
+      expect(typeof received[0].timestamp).toBe('number');
+    } finally {
+      unsubscribe();
+    }
+    GaesupCore.recordRuntimeEvent({ type: 'runtime:error', code: 'SUB_TEST_SECOND' });
+    expect(received).toHaveLength(1);
+  });
+
+  it('isolates a throwing listener, keeps notifying others, and records TIMELINE_LISTENER_ERROR', () => {
+    const received: any[] = [];
+    const unsubscribeThrowing = GaesupCore.subscribeRuntimeTimeline(() => {
+      throw new Error('listener boom');
+    });
+    const unsubscribeHealthy = GaesupCore.subscribeRuntimeTimeline((event) => received.push(event));
+    try {
+      const before = GaesupCore.getRuntimeTimeline().length;
+      GaesupCore.recordRuntimeEvent({ type: 'runtime:error', code: 'SUB_TEST_THROW' });
+
+      expect(received).toHaveLength(1);
+      expect(received[0].code).toBe('SUB_TEST_THROW');
+
+      const events = GaesupCore.getRuntimeTimeline().slice(before);
+      expect(events.some((event) => (
+        event.type === 'runtime:error'
+        && event.code === 'TIMELINE_LISTENER_ERROR'
+        && event.message?.includes('listener boom')
+      ))).toBe(true);
+
+      GaesupCore.recordRuntimeEvent({ type: 'runtime:error', code: 'SUB_TEST_AFTER_THROW' });
+      expect(received).toHaveLength(2);
+      expect(received[1].code).toBe('SUB_TEST_AFTER_THROW');
+    } finally {
+      unsubscribeThrowing();
+      unsubscribeHealthy();
+    }
+  });
+
+  it('counts dropped events when the timeline buffer is truncated', async () => {
+    await initGaesupCore();
+    const droppedBefore = (await GaesupCore.getRuntimeMetrics()).droppedTimelineEventCount;
+    const lengthBefore = GaesupCore.getRuntimeTimeline().length;
+    const pushCount = 520;
+    for (let index = 0; index < pushCount; index += 1) {
+      GaesupCore.recordRuntimeEvent({ type: 'runtime:error', code: 'DROP_TEST', details: { index } });
+    }
+    const droppedAfter = (await GaesupCore.getRuntimeMetrics()).droppedTimelineEventCount;
+    const expectedDropped = Math.max(0, lengthBefore + pushCount - 500);
+    expect(droppedAfter - droppedBefore).toBe(expectedDropped);
+    expect(GaesupCore.getRuntimeTimeline().length).toBe(500);
+  });
+
+  it('exposes droppedTimelineEventCount as a number in runtime metrics', async () => {
+    await initGaesupCore();
+    const metrics = await GaesupCore.getRuntimeMetrics();
+    expect(metrics).toHaveProperty('droppedTimelineEventCount');
+    expect(typeof metrics.droppedTimelineEventCount).toBe('number');
+  });
+});
+
 function flattenMutations(dispatches: Array<{ storeId: string; actionType: string; payload: any }>) {
   return dispatches.flatMap((dispatch) => {
     if (dispatch.actionType !== 'BATCH') return [dispatch];

@@ -214,6 +214,7 @@ export interface RuntimeTimelineEvent {
 export interface RuntimeMetricsSnapshot {
   timestamp: number;
   timeline: RuntimeTimelineEvent[];
+  droppedTimelineEventCount: number;
   containers: ContainerMetadata[];
   stores: RegisteredStoreSchema[];
 }
@@ -233,6 +234,8 @@ export interface ApplyManifestStorePolicyOptions {
 let ready: Promise<void> | null = null;
 const dispatchListeners = new Map<string, Set<(action: Action, state: any) => void>>();
 const runtimeTimeline: RuntimeTimelineEvent[] = [];
+const runtimeTimelineListeners = new Set<(event: RuntimeTimelineEvent) => void>();
+let droppedTimelineEventCount = 0;
 const storeRuntimePolicies = new Map<string, StoreRuntimePolicy>();
 let autoStoreSeq = 0;
 let activeAutoWatcher: AutoStoreWatcher<any, any> | null = null;
@@ -250,13 +253,27 @@ function requireReady() {
   }
 }
 
-function pushRuntimeEvent(event: Omit<RuntimeTimelineEvent, 'timestamp'>) {
-  runtimeTimeline.push({
+function pushRuntimeEvent(event: Omit<RuntimeTimelineEvent, 'timestamp'>, notifyListeners = true) {
+  const entry: RuntimeTimelineEvent = {
     ...event,
     timestamp: Date.now()
-  });
+  };
+  runtimeTimeline.push(entry);
   if (runtimeTimeline.length > 500) {
+    droppedTimelineEventCount += runtimeTimeline.length - 500;
     runtimeTimeline.splice(0, runtimeTimeline.length - 500);
+  }
+  if (!notifyListeners) return;
+  for (const listener of runtimeTimelineListeners) {
+    try {
+      listener(entry);
+    } catch (error) {
+      pushRuntimeEvent({
+        type: 'runtime:error',
+        code: 'TIMELINE_LISTENER_ERROR',
+        message: error instanceof Error ? error.message : String(error)
+      }, false);
+    }
   }
 }
 
@@ -411,12 +428,19 @@ export const GaesupCore = {
     return {
       timestamp: Date.now(),
       timeline: [...runtimeTimeline],
+      droppedTimelineEventCount,
       containers: wasm.list_containers() as ContainerMetadata[],
       stores: wasm.get_store_schemas() as RegisteredStoreSchema[]
     };
   },
   getRuntimeTimeline() {
     return [...runtimeTimeline];
+  },
+  subscribeRuntimeTimeline(listener: (event: RuntimeTimelineEvent) => void): () => void {
+    runtimeTimelineListeners.add(listener);
+    return () => {
+      runtimeTimelineListeners.delete(listener);
+    };
   },
   recordRuntimeEvent(event: Omit<RuntimeTimelineEvent, 'timestamp'>) {
     pushRuntimeEvent(event);
