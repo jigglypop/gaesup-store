@@ -1099,6 +1099,69 @@ describe('manifest integrity guard', () => {
   });
 });
 
+describe('manifest:validated timeline audit', () => {
+  it('records a manifest:validated event with valid: true for a valid manifest via static validate', async () => {
+    await initGaesupCore();
+    const before = GaesupCore.getRuntimeTimeline().length;
+
+    const result = CompatibilityGuard.validate({
+      manifestVersion: '1.0',
+      name: 'audit-widget',
+      version: '1.0.0'
+    });
+
+    expect(result.valid).toBe(true);
+    const events = GaesupCore.getRuntimeTimeline().slice(before);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      type: 'manifest:validated',
+      details: { manifest: 'audit-widget', valid: true, errorCodes: [] }
+    });
+  });
+
+  it('records a manifest:validated event with valid: false and error codes for an invalid manifest', async () => {
+    await initGaesupCore();
+    const before = GaesupCore.getRuntimeTimeline().length;
+
+    const result = CompatibilityGuard.validate({
+      manifestVersion: '1.0',
+      name: 'audit-widget-invalid',
+      version: '1.0.0'
+    }, { requireIntegrity: true });
+
+    expect(result.valid).toBe(false);
+    const events = GaesupCore.getRuntimeTimeline().slice(before);
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe('manifest:validated');
+    expect(events[0].details).toMatchObject({
+      manifest: 'audit-widget-invalid',
+      valid: false
+    });
+    expect(events[0].details?.errorCodes).toContain('MANIFEST_INTEGRITY_MISSING');
+  });
+
+  it('records a manifest:validated event through the instance validate path', async () => {
+    await initGaesupCore();
+    const guard = new CompatibilityGuard({ requireIntegrity: true });
+    const before = GaesupCore.getRuntimeTimeline().length;
+
+    const result = guard.validate({
+      manifestVersion: '1.0',
+      name: 'audit-widget-instance',
+      version: '1.0.0',
+      integrity: { hash: `sha256-${'a1b2c3d4'.repeat(8)}` }
+    });
+
+    expect(result.valid).toBe(true);
+    const events = GaesupCore.getRuntimeTimeline().slice(before);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      type: 'manifest:validated',
+      details: { manifest: 'audit-widget-instance', valid: true, errorCodes: [] }
+    });
+  });
+});
+
 function flattenMutations(dispatches: Array<{ storeId: string; actionType: string; payload: any }>) {
   return dispatches.flatMap((dispatch) => {
     if (dispatch.actionType !== 'BATCH') return [dispatch];

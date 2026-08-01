@@ -648,15 +648,30 @@ async function dispatchDualWrites(storeId: string, actionType: string, payload: 
   }
 }
 
+function validateManifestWithAudit(
+  manifest: ContainerPackageManifest,
+  host: HostCompatibilityConfig
+): ValidationResult {
+  requireReady();
+  const result = wasm.validate_manifest(manifest, host) as ValidationResult;
+  pushRuntimeEvent({
+    type: 'manifest:validated',
+    details: {
+      manifest: manifest.name,
+      valid: result.valid,
+      errorCodes: result.errors.map((error) => error.code)
+    }
+  });
+  return result;
+}
+
 export class CompatibilityGuard {
   constructor(private readonly host: HostCompatibilityConfig = {}) {}
   validate(manifest: ContainerPackageManifest): ValidationResult {
-    requireReady();
-    return wasm.validate_manifest(manifest, this.host);
+    return validateManifestWithAudit(manifest, this.host);
   }
   static validate(manifest: ContainerPackageManifest, host: HostCompatibilityConfig = {}) {
-    requireReady();
-    return wasm.validate_manifest(manifest, host) as ValidationResult;
+    return validateManifestWithAudit(manifest, host);
   }
 }
 
