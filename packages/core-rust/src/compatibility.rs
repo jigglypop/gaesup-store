@@ -16,6 +16,7 @@ pub fn validate_manifest(manifest: JsValue, host: JsValue) -> Result<JsValue, Js
     validate_integrity(&manifest, &host, &mut errors);
     validate_signature(&manifest, &host, &mut errors);
     validate_allowed_imports(&manifest, &host, &mut errors);
+    validate_permissions(&manifest, &host, &mut errors);
     validate_dependencies(&manifest, &host, &mut errors, &mut warnings);
     validate_stores(
         &manifest,
@@ -166,6 +167,84 @@ fn validate_allowed_imports(manifest: &Value, host: &Value, errors: &mut Vec<Val
                 ));
             }
         }
+    }
+}
+
+const KNOWN_PERMISSION_CAPABILITIES: [&str; 6] = [
+    "network",
+    "storage",
+    "dom",
+    "crossStore",
+    "crossContainer",
+    "effects",
+];
+
+fn validate_permissions(manifest: &Value, host: &Value, errors: &mut Vec<Value>) {
+    let Some(declared) = manifest.get("permissions") else {
+        return;
+    };
+    let Some(entries) = declared.as_object() else {
+        errors.push(validation_issue(
+            "MANIFEST_PERMISSIONS_INVALID",
+            "permissions must be an object keyed by capability name",
+            "error",
+            "permissions",
+        ));
+        return;
+    };
+    let host_allowlist: Option<Vec<&str>> = host
+        .get("allowedPermissions")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::trim)
+                .collect()
+        });
+
+    for (capability, value) in entries {
+        let target = format!("permissions.{capability}");
+        if !KNOWN_PERMISSION_CAPABILITIES.contains(&capability.as_str()) {
+            errors.push(validation_issue(
+                "PERMISSION_UNKNOWN_CAPABILITY",
+                &format!(
+                    "Permission capability {capability} is not in the known capability registry ({})",
+                    KNOWN_PERMISSION_CAPABILITIES.join(", ")
+                ),
+                "error",
+                &target,
+            ));
+            continue;
+        }
+        if !permission_is_requested(value) {
+            continue;
+        }
+        if let Some(allowlist) = &host_allowlist {
+            if !allowlist.contains(&capability.as_str()) {
+                errors.push(validation_issue(
+                    "PERMISSION_NOT_GRANTED",
+                    &format!(
+                        "Permission capability {capability} is requested but not granted by the host"
+                    ),
+                    "error",
+                    &target,
+                ));
+            }
+        }
+    }
+}
+
+fn permission_is_requested(value: &Value) -> bool {
+    match value {
+        Value::Bool(enabled) => *enabled,
+        Value::String(mode) => mode != "none",
+        Value::Array(items) => !items.is_empty(),
+        Value::Object(map) => {
+            map.get("enabled").and_then(Value::as_bool) != Some(false)
+                && map.get("mode").and_then(Value::as_str) != Some("none")
+        }
+        _ => true,
     }
 }
 
@@ -1291,6 +1370,117 @@ mod tests {
         validate_allowed_imports(&manifest, &host, &mut errors);
 
         assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn known_capabilities_granted_by_host_pass() {
+        let manifest = json!({
+            "permissions": {
+                "network": { "enabled": true, "allow": ["https://api.example.com"] },
+                "storage": "scoped",
+                "effects": ["sendEmail"]
+            }
+        });
+        let host = json!({ "allowedPermissions": ["network", "storage", "effects"] });
+        let mut errors = vec![];
+
+        validate_permissions(&manifest, &host, &mut errors);
+
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn unknown_capability_keys_get_one_error_per_key() {
+        let manifest = json!({
+            "permissions": {
+                "clipboard": true,
+                "usb": { "enabled": true },
+                "dom": true
+            }
+        });
+        let host = json!({ "allowedPermissions": ["dom"] });
+        let mut errors = vec![];
+
+        validate_permissions(&manifest, &host, &mut errors);
+
+        assert_eq!(errors.len(), 2);
+        let mut targets: Vec<&str> = errors
+            .iter()
+            .filter_map(|issue| issue.get("target").and_then(Value::as_str))
+            .collect();
+        targets.sort_unstable();
+        assert_eq!(targets, vec!["permissions.clipboard", "permissions.usb"]);
+        for error in &errors {
+            assert_eq!(error["code"], "PERMISSION_UNKNOWN_CAPABILITY");
+            assert!(error["message"]
+                .as_str()
+                .unwrap()
+                .contains("network, storage, dom, crossStore, crossContainer, effects"));
+        }
+        assert!(errors.iter().any(|error| error["message"]
+            .as_str()
+            .unwrap()
+            .contains("clipboard")));
+    }
+
+    #[test]
+    fn requested_capability_missing_from_host_grant_list_is_error() {
+        let manifest = json!({ "permissions": { "network": true, "dom": true } });
+        let host = json!({ "allowedPermissions": ["dom"] });
+        let mut errors = vec![];
+
+        validate_permissions(&manifest, &host, &mut errors);
+
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0]["code"], "PERMISSION_NOT_GRANTED");
+        assert_eq!(errors[0]["target"], "permissions.network");
+        assert!(errors[0]["message"].as_str().unwrap().contains("network"));
+    }
+
+    #[test]
+    fn inactive_permission_values_pass_without_host_grant() {
+        let manifest = json!({
+            "permissions": {
+                "network": false,
+                "storage": "none",
+                "dom": { "enabled": false },
+                "crossStore": { "mode": "none" },
+                "effects": []
+            }
+        });
+        let host = json!({ "allowedPermissions": [] });
+        let mut errors = vec![];
+
+        validate_permissions(&manifest, &host, &mut errors);
+
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn non_object_permissions_is_rejected_as_invalid() {
+        for bad_permissions in [json!("network"), json!(["network"]), json!(true)] {
+            let manifest = json!({ "permissions": bad_permissions });
+            let host = json!({});
+            let mut errors = vec![];
+
+            validate_permissions(&manifest, &host, &mut errors);
+
+            assert_eq!(errors[0]["code"], "MANIFEST_PERMISSIONS_INVALID");
+            assert_eq!(errors[0]["target"], "permissions");
+        }
+    }
+
+    #[test]
+    fn requested_capability_passes_registry_check_when_host_has_no_grant_list() {
+        let manifest = json!({ "permissions": { "network": true, "teleport": true } });
+        let host = json!({});
+        let mut errors = vec![];
+
+        validate_permissions(&manifest, &host, &mut errors);
+
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0]["code"], "PERMISSION_UNKNOWN_CAPABILITY");
+        assert_eq!(errors[0]["target"], "permissions.teleport");
     }
 
     #[test]

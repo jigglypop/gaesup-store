@@ -1224,6 +1224,57 @@ describe('allowedImports validation', () => {
   });
 });
 
+describe('permissions capability validation', () => {
+  it('blocks a manifest declaring a capability outside the known registry', async () => {
+    await initGaesupCore();
+    const guard = new CompatibilityGuard({ allowedPermissions: ['dom'] });
+
+    const result = guard.validate({
+      manifestVersion: '1.0',
+      name: 'shop-body',
+      version: '1.8.0',
+      permissions: { clipboard: true, dom: true }
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.errors[0].code).toBe('PERMISSION_UNKNOWN_CAPABILITY');
+    expect(result.errors[0].target).toBe('permissions.clipboard');
+    expect(result.errors[0].message).toContain('clipboard');
+  });
+
+  it('blocks a network permission request the host has not granted', async () => {
+    await initGaesupCore();
+    const guard = new CompatibilityGuard({ allowedPermissions: ['dom'] });
+
+    const result = guard.validate({
+      manifestVersion: '1.0',
+      name: 'shop-body',
+      version: '1.8.0',
+      permissions: { network: { enabled: true, allow: ['https://api.example.com'] }, dom: true }
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0].code).toBe('PERMISSION_NOT_GRANTED');
+    expect(result.errors[0].target).toBe('permissions.network');
+  });
+
+  it('accepts known capabilities that the host has granted', async () => {
+    await initGaesupCore();
+    const guard = new CompatibilityGuard({ allowedPermissions: ['network', 'storage', 'effects'] });
+
+    const result = guard.validate({
+      manifestVersion: '1.0',
+      name: 'shop-body',
+      version: '1.8.0',
+      permissions: { network: true, storage: 'scoped', effects: ['sendEmail'], dom: false }
+    });
+
+    expect(result.valid).toBe(true);
+    expect(result.errors).toEqual([]);
+  });
+});
+
 describe('manifest:validated timeline audit', () => {
   it('records a manifest:validated event with valid: true for a valid manifest via static validate', async () => {
     await initGaesupCore();
@@ -1499,6 +1550,42 @@ function validateManifestMock(manifest: any, host: any) {
     }
   }
 
+  const declaredPermissions = manifest.permissions;
+  if (declaredPermissions !== undefined) {
+    if (typeof declaredPermissions !== 'object' || declaredPermissions === null || Array.isArray(declaredPermissions)) {
+      errors.push({
+        code: 'MANIFEST_PERMISSIONS_INVALID',
+        message: 'permissions must be an object keyed by capability name',
+        severity: 'error',
+        target: 'permissions'
+      });
+    } else {
+      const hostPermissionAllowlist = Array.isArray(host.allowedPermissions)
+        ? host.allowedPermissions.filter((item: any) => typeof item === 'string').map((item: string) => item.trim())
+        : null;
+      for (const [capability, value] of Object.entries(declaredPermissions)) {
+        if (!KNOWN_PERMISSION_CAPABILITIES_MOCK.includes(capability)) {
+          errors.push({
+            code: 'PERMISSION_UNKNOWN_CAPABILITY',
+            message: `Permission capability ${capability} is not in the known capability registry (${KNOWN_PERMISSION_CAPABILITIES_MOCK.join(', ')})`,
+            severity: 'error',
+            target: `permissions.${capability}`
+          });
+          continue;
+        }
+        if (!permissionIsRequestedMock(value)) continue;
+        if (hostPermissionAllowlist && !hostPermissionAllowlist.includes(capability)) {
+          errors.push({
+            code: 'PERMISSION_NOT_GRANTED',
+            message: `Permission capability ${capability} is requested but not granted by the host`,
+            severity: 'error',
+            target: `permissions.${capability}`
+          });
+        }
+      }
+    }
+  }
+
   if (deployment) {
     const strictRelease = hostDeployment?.strictRelease ?? Boolean(hostDeployment?.releaseId);
     if (strictRelease && deployment.releaseId !== hostDeployment?.releaseId) {
@@ -1565,6 +1652,17 @@ function validateManifestMock(manifest: any, host: any) {
   }
 
   return { valid: errors.length === 0, errors, warnings, isolatedStores: [] };
+}
+
+const KNOWN_PERMISSION_CAPABILITIES_MOCK = ['network', 'storage', 'dom', 'crossStore', 'crossContainer', 'effects'];
+
+function permissionIsRequestedMock(value: any) {
+  if (value === false || value === 'none') return false;
+  if (Array.isArray(value)) return value.length > 0;
+  if (value && typeof value === 'object') {
+    if (value.enabled === false || value.mode === 'none') return false;
+  }
+  return true;
 }
 
 function machineSnapshotMock(machine: any, changed: boolean, actions: any[]) {

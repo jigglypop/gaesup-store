@@ -93,6 +93,7 @@ export interface HostCompatibilityConfig {
   requireIntegrity?: boolean;
   requireSignature?: boolean;
   allowedImports?: string[];
+  allowedPermissions?: string[];
 }
 
 export interface ContainerPackageManifest {
