@@ -421,12 +421,22 @@ import { SCHEMAS } from '../fixtures/schemas';
      네이티브 테스트 4개.
    - 테스트 현황: Rust 네이티브 65개, TS(vitest) 78개 green.
 
-5. **5주기**: Metrics & observability 🚧 갭 분석 완료, 착수 예정
+5. **5주기**: Metrics & observability ✅ 완료 (2026-08-02)
    - Store, container, machine 단위 metrics
    - DevTools timeline 연동
-   - 주요 갭 — machine 단위 metrics API 부재, getRuntimeMetrics에 machine 축 없음,
-     timeline 500개 무음 절단, 구독(push) 채널 없음. 첫 최소 단위 후보:
-     `get_machine_metrics` (기존 history 순수 집계, historyTruncated 명시).
+   - `get_machine_metrics` (Rust 순수 집계 `machine_metrics` + thin 래퍼, TS
+     `getMachineMetrics`/`MachineMetricsSnapshot`): transitionCount/avg/
+     maxDurationMs. fail-closed 관측성 — 표본 없으면 null(0으로 위장 금지),
+     `historyAvailable`/`historyTruncated`로 부분 표본 명시.
+   - timeline 드롭 카운터: 500개 절단을 `droppedTimelineEventCount`로 노출
+     (무음 손실 제거). `subscribeRuntimeTimeline` push 채널 — 리스너 예외
+     격리 + `TIMELINE_LISTENER_ERROR` 기록(재귀 방지), 해제 함수 반환.
+   - `getRuntimeMetrics`에 `machines` 축 추가 (`list_machine_metrics`, 집계
+     로직 단일 소스 재사용).
+   - 테스트 현황: Rust 네이티브 71개, TS(vitest) 86개 green.
+   - 잔여: React 등 어댑터의 runtime metrics 소비 훅(폴링 대신 구독 채널
+     사용), DevTools 브리지-예제 시그니처 불일치, ContainerMetrics 타입
+     계약 미고정.
 
 6. **6주기+**: Framework adapter robustness
    - Repeated mount/unmount
