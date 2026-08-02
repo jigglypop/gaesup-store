@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const calls = vi.hoisted(() => ({
   stores: new Map<string, any>(),
   machines: new Map<string, any>(),
+  containers: new Map<string, any>(),
   dispatches: [] as Array<{ storeId: string; actionType: string; payload: any }>
 }));
 
@@ -71,15 +72,25 @@ vi.mock('gaesup-state-core-rust/web', () => ({
   get_metrics: vi.fn(() => ({})),
   register_store_schema: vi.fn(),
   get_store_schemas: vi.fn(() => []),
-  create_container: vi.fn((config: any) => ({
-    id: config.id || `${config.name}:test`,
-    name: config.name,
-    status: 'running',
-    state: structuredClone(config.initialState || {}),
-    calls: 0
-  })),
+  create_container: vi.fn((config: any) => {
+    const container = {
+      id: config.id || `${config.name}:test`,
+      name: config.name,
+      status: 'running',
+      state: structuredClone(config.initialState || {}),
+      calls: 0
+    };
+    calls.containers.set(container.id, container);
+    return container;
+  }),
   call_container: vi.fn(),
-  get_container_state: vi.fn(() => ({})),
+  get_container_state: vi.fn((containerId: string) => calls.containers.get(containerId)?.state ?? ({})),
+  update_container_state: vi.fn((containerId: string, state: any) => {
+    const container = calls.containers.get(containerId);
+    if (!container) throw new Error(`Container not found: ${containerId}`);
+    container.state = structuredClone(state);
+    return container.state;
+  }),
   get_container_metrics: vi.fn(() => ({ status: 'running' })),
   stop_container: vi.fn(),
   list_containers: vi.fn(() => []),
@@ -852,6 +863,45 @@ describe('container runtime boundary', () => {
     const manager = await createOptimalContainerManager();
 
     expect(manager).toBeInstanceOf(DemoContainerManager);
+  });
+});
+
+describe('container state updates', () => {
+  beforeEach(() => {
+    calls.containers.clear();
+  });
+
+  it('returns the replaced state from setState', async () => {
+    const manager = new ContainerManager();
+    const container = await manager.createContainer({
+      name: 'state-widget',
+      runtime: 'demo',
+      initialState: { count: 0 }
+    });
+
+    const next = await container.setState({ count: 5, framework: 'react' });
+
+    expect(next).toEqual({ count: 5, framework: 'react' });
+  });
+
+  it('reflects the replaced state through getState after setState', async () => {
+    const manager = new ContainerManager();
+    const container = await manager.createContainer({
+      name: 'state-widget',
+      runtime: 'demo',
+      initialState: { count: 0 }
+    });
+
+    await container.setState({ count: 7 });
+
+    expect(container.getState()).toEqual({ count: 7 });
+  });
+
+  it('rejects setState for a missing container', async () => {
+    const manager = new ContainerManager();
+    const container = manager.getContainer('missing-container');
+
+    await expect(container.setState({ count: 1 })).rejects.toThrow('Container not found: missing-container');
   });
 });
 

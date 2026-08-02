@@ -723,6 +723,7 @@ export class ContainerInstance {
   getStatus() { return this.getMetrics().status; }
   async call(functionName: string, args?: any) { await ensureReady(); return wasm.call_container(this.id, functionName, args); }
   getState() { requireReady(); return wasm.get_container_state(this.id); }
+  async setState(state: any) { await ensureReady(); return wasm.update_container_state(this.id, state); }
   getMetrics() { requireReady(); return wasm.get_container_metrics(this.id); }
   async stop() { await ensureReady(); return wasm.stop_container(this.id); }
 }
