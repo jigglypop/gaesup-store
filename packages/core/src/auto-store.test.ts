@@ -149,22 +149,9 @@ vi.mock('gaesup-state-core-rust/web', () => ({
   get_machine_metrics: vi.fn((machineId: string) => {
     const machine = calls.machines.get(machineId);
     if (!machine) throw new Error(`Machine not found: ${machineId}`);
-    const historyLimit = machine.definition.historyLimit ?? machine.definition.options?.historyLimit ?? 100;
-    const durations = machine.history.map((entry: any) => entry.durationMs);
-    return {
-      machineId: machine.id,
-      state: machine.state,
-      status: machine.status,
-      step: machine.step,
-      historyAvailable: historyLimit > 0,
-      historyTruncated: machine.step > machine.history.length,
-      transitionCount: machine.history.length,
-      avgDurationMs: durations.length
-        ? durations.reduce((sum: number, value: number) => sum + value, 0) / durations.length
-        : null,
-      maxDurationMs: durations.length ? Math.max(...durations) : null
-    };
+    return machineMetricsMock(machine);
   }),
+  list_machine_metrics: vi.fn(() => [...calls.machines.values()].map(machineMetricsMock)),
   BatchUpdate: class {
     updates: any[] = [];
     constructor(readonly storeId: string) {}
@@ -1048,6 +1035,61 @@ describe('machine metrics API', () => {
     await expect(GaesupCore.getMachineMetrics('missing-machine')).rejects.toThrow(
       'Machine not found: missing-machine'
     );
+  });
+
+  it('includes per-machine aggregates in the runtime metrics machines axis after transitions', async () => {
+    const actor = createActor(createMachine({
+      id: 'runtime-metrics-flow',
+      initial: 'cart',
+      context: {},
+      states: {
+        cart: {
+          on: {
+            NEXT: { target: 'done' }
+          }
+        },
+        done: { final: true }
+      }
+    }));
+
+    await actor.start();
+    await actor.send('NEXT');
+    calls.machines.get('runtime-metrics-flow').history[0].durationMs = 6;
+
+    const runtime = await GaesupCore.getRuntimeMetrics();
+
+    const entry = runtime.machines.find((metrics) => metrics.machineId === 'runtime-metrics-flow');
+    expect(entry).toMatchObject({
+      machineId: 'runtime-metrics-flow',
+      state: 'done',
+      status: 'final',
+      step: 1,
+      transitionCount: 1,
+      avgDurationMs: 6,
+      maxDurationMs: 6
+    });
+  });
+
+  it('omits cleaned-up machines from the runtime metrics machines axis', async () => {
+    const actor = createActor(createMachine({
+      id: 'runtime-metrics-removed',
+      initial: 'cart',
+      context: {},
+      states: {
+        cart: {
+          on: {
+            NEXT: { target: 'done' }
+          }
+        },
+        done: { final: true }
+      }
+    }));
+    await actor.start();
+    await actor.stop();
+
+    const runtime = await GaesupCore.getRuntimeMetrics();
+
+    expect(runtime.machines.some((metrics) => metrics.machineId === 'runtime-metrics-removed')).toBe(false);
   });
 });
 
@@ -1976,6 +2018,24 @@ function machineSnapshotMock(machine: any, changed: boolean, actions: any[]) {
     history: structuredClone(machine.history),
     changed,
     actions
+  };
+}
+
+function machineMetricsMock(machine: any) {
+  const historyLimit = machine.definition.historyLimit ?? machine.definition.options?.historyLimit ?? 100;
+  const durations = machine.history.map((entry: any) => entry.durationMs);
+  return {
+    machineId: machine.id,
+    state: machine.state,
+    status: machine.status,
+    step: machine.step,
+    historyAvailable: historyLimit > 0,
+    historyTruncated: machine.step > machine.history.length,
+    transitionCount: machine.history.length,
+    avgDurationMs: durations.length
+      ? durations.reduce((sum: number, value: number) => sum + value, 0) / durations.length
+      : null,
+    maxDurationMs: durations.length ? Math.max(...durations) : null
   };
 }
 

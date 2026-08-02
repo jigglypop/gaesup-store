@@ -217,6 +217,7 @@ export interface RuntimeMetricsSnapshot {
   droppedTimelineEventCount: number;
   containers: ContainerMetadata[];
   stores: RegisteredStoreSchema[];
+  machines: MachineMetricsSnapshot[];
 }
 
 export interface StoreRuntimePolicy {
@@ -430,7 +431,8 @@ export const GaesupCore = {
       timeline: [...runtimeTimeline],
       droppedTimelineEventCount,
       containers: wasm.list_containers() as ContainerMetadata[],
-      stores: wasm.get_store_schemas() as RegisteredStoreSchema[]
+      stores: wasm.get_store_schemas() as RegisteredStoreSchema[],
+      machines: (wasm as any).list_machine_metrics() as MachineMetricsSnapshot[]
     };
   },
   getRuntimeTimeline() {
