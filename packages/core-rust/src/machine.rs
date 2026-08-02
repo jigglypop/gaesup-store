@@ -679,7 +679,11 @@ mod tests {
         });
         let context = json!({ "items": [{ "id": 1 }] });
 
-        assert!(guard_allows(&transition, &context, &json!({ "type": "NEXT" })));
+        assert!(guard_allows(
+            &transition,
+            &context,
+            &json!({ "type": "NEXT" })
+        ));
     }
 
     #[test]
@@ -709,7 +713,11 @@ mod tests {
         });
         let mut context = json!({ "paymentId": null });
 
-        apply_assign(&mut context, &transition, &json!({ "type": "PAY", "paymentId": "pay_1" }));
+        apply_assign(
+            &mut context,
+            &transition,
+            &json!({ "type": "PAY", "paymentId": "pay_1" }),
+        );
 
         assert_eq!(context["paymentId"], "pay_1");
         assert_eq!(context["meta"]["updatedAt"], 123);
