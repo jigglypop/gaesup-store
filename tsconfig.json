@@ -22,6 +22,10 @@
     // 경로 매핑
     "baseUrl": ".",
     "paths": {
+      "@gaesup/core": ["./packages/gaesup-core/src"],
+      "@gaesup/store": ["./packages/gaesup-store/src"],
+      "@gaesup/runtime": ["./packages/gaesup-runtime/src"],
+      "@gaesup/react": ["./packages/gaesup-react/src"],
       "gaesup-state": ["./packages/core/src"],
       "@gaesup-state/state": ["./packages/state/src"],
       "@gaesup-state/react": ["./packages/frameworks/react/src"],

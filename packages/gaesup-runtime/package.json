@@ -1,0 +1,17 @@
+{
+  "name": "@gaesup/runtime",
+  "version": "0.1.0",
+  "description": "Gaesup Container Runtime: defineContainer, createRuntime, expose/consume resolver",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "type-check": "node --max-old-space-size=4096 ../../node_modules/typescript/bin/tsc --noEmit -p tsconfig.json",
+    "test": "node --max-old-space-size=4096 ../../node_modules/vitest/vitest.mjs run"
+  },
+  "dependencies": {
+    "@gaesup/core": "workspace:*",
+    "@gaesup/store": "workspace:*"
+  }
+}
