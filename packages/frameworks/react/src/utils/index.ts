@@ -1,5 +1,14 @@
 import type { ContainerConfig, ValidationResult } from 'gaesup-state'
 
+// Resource-limit fields are not part of the core ContainerConfig contract;
+// they arrive from manifests, so validate them as optional extensions.
+type ExtendedContainerConfig = ContainerConfig & {
+  maxMemory?: number
+  maxCpuTime?: number
+  networkAccess?: boolean
+  isolation?: { fileSystemAccess?: boolean }
+}
+
 export function createContainer(
   name: string, 
   wasmModule: WebAssembly.Module, 
@@ -13,7 +22,7 @@ export function createContainer(
   }
 }
 
-export function validateContainer(config: ContainerConfig): ValidationResult {
+export function validateContainer(config: ExtendedContainerConfig): ValidationResult {
   const errors: any[] = []
   const warnings: any[] = []
 

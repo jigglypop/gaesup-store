@@ -182,6 +182,30 @@ function collectAffected(node: AnyNode, visited: Set<AnyNode>) {
   }
 }
 
+// §20: 'sync' notifies at the end of each set/batch (default); 'microtask'
+// coalesces every same-turn write into one flush at microtask time. Values
+// commit immediately either way — only notifications defer.
+let flushMode: 'sync' | 'microtask' = 'sync';
+let microtaskFlushScheduled = false;
+
+export function configureScheduler(options: { flushMode: 'sync' | 'microtask' }): void {
+  flushMode = options.flushMode;
+}
+
+function requestFlush() {
+  if (batchDepth > 0) return;
+  if (flushMode === 'sync') {
+    flushNotifications();
+    return;
+  }
+  if (microtaskFlushScheduled) return;
+  microtaskFlushScheduled = true;
+  queueMicrotask(() => {
+    microtaskFlushScheduled = false;
+    flushNotifications();
+  });
+}
+
 function flushNotifications() {
   while (pendingNotifications.size > 0) {
     const nodes = [...pendingNotifications];
@@ -257,7 +281,7 @@ export function state<T>(initialValue: T, options: GraphNodeOptions<T> = {}): St
       globalVersion += 1;
       emitTrace('state-change', node.id, node.version);
       collectAffected(node, new Set());
-      if (batchDepth === 0) flushNotifications();
+      requestFlush();
     },
     subscribe(listener) {
       node.listeners.add(listener);
@@ -313,7 +337,41 @@ export function batch<T>(fn: () => T): T {
     return fn();
   } finally {
     batchDepth -= 1;
-    if (batchDepth === 0) flushNotifications();
+    requestFlush();
+  }
+}
+
+// --- Transaction metadata (§28) ---------------------------------------------
+
+export interface TransactionInfo {
+  id: string;
+  writes: string[];
+  status: 'COMMITTED' | 'ROLLED_BACK';
+}
+
+let transactionSeq = 0;
+const transactionListeners = new Set<(info: TransactionInfo) => void>();
+
+export function subscribeTransactions(listener: (info: TransactionInfo) => void): () => void {
+  transactionListeners.add(listener);
+  return () => {
+    transactionListeners.delete(listener);
+  };
+}
+
+function emitTransaction(journal: Map<StateInternal<any>, any>, status: TransactionInfo['status']) {
+  if (transactionListeners.size === 0 || journal.size === 0) return;
+  const info: TransactionInfo = {
+    id: `txn:${++transactionSeq}`,
+    writes: [...journal.keys()].map((node) => node.id),
+    status
+  };
+  for (const listener of transactionListeners) {
+    try {
+      listener(info);
+    } catch {
+      // A broken transaction listener must never break the commit.
+    }
   }
 }
 
@@ -371,14 +429,19 @@ export function transaction<T>(fn: () => T): T {
   activeJournal = journal;
   batchDepth += 1;
   try {
-    return fn();
+    const result = fn();
+    if (!parentJournal) emitTransaction(journal, 'COMMITTED');
+    return result;
   } catch (error) {
-    if (!parentJournal) rollbackJournal(journal);
+    if (!parentJournal) {
+      rollbackJournal(journal);
+      emitTransaction(journal, 'ROLLED_BACK');
+    }
     throw error;
   } finally {
     activeJournal = parentJournal;
     batchDepth -= 1;
-    if (batchDepth === 0) flushNotifications();
+    requestFlush();
   }
 }
 
@@ -398,12 +461,12 @@ export function recordWrites(fn: () => void): WriteJournal {
   } finally {
     activeJournal = parentJournal;
     batchDepth -= 1;
-    if (batchDepth === 0) flushNotifications();
+    requestFlush();
   }
   return {
     revert() {
       rollbackJournal(journal);
-      if (batchDepth === 0) flushNotifications();
+      requestFlush();
     }
   };
 }

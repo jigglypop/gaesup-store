@@ -37,27 +37,29 @@ export function useContainerState<T = any>(
     setError(null)
 
     try {
-      const containerInstance = await manager.run(containerName, containerConfig)
-      
+      const containerInstance = await manager.createContainer({
+        ...containerConfig,
+        name: containerName
+      })
+
       if (mountedRef.current) {
         setContainer(containerInstance)
-        
+
         // 초기 상태 설정
         if (initialState !== undefined) {
-          await containerInstance.updateState(initialState)
+          await containerInstance.setState(initialState)
         }
-        
-        // 상태 구독
-        const unsubscribe = containerInstance.subscribe((newState: T) => {
-          if (mountedRef.current) {
-            setState(newState)
-            onStateChange?.(newState)
-          }
-        })
 
-        // 컨테이너 인스턴스에 정리 함수 저장
-        ;(containerInstance as any)._unsubscribe = unsubscribe
-        
+        // ContainerInstance는 per-instance 구독 채널이 없으므로 시작 시점의
+        // 상태를 읽어 동기화하고, 이후에는 setState/refresh 경로로 갱신한다.
+        try {
+          const currentState = containerInstance.getState() as T
+          setState(currentState)
+          onStateChange?.(currentState)
+        } catch {
+          // 상태가 아직 없으면 initialState 유지
+        }
+
         retryCountRef.current = 0
       }
     } catch (err) {
@@ -88,12 +90,6 @@ export function useContainerState<T = any>(
   const stopContainer = useCallback(async () => {
     if (container) {
       try {
-        // 구독 해제
-        const unsubscribe = (container as any)._unsubscribe
-        if (unsubscribe) {
-          unsubscribe()
-        }
-
         await container.stop()
         
         if (mountedRef.current) {
@@ -113,7 +109,7 @@ export function useContainerState<T = any>(
     }
 
     try {
-      const result = await container.call<R>(functionName, args)
+      const result = (await container.call(functionName, args)) as R
       return result
     } catch (err) {
       const error = err instanceof Error ? err : new Error('Function call failed')
@@ -134,7 +130,7 @@ export function useContainerState<T = any>(
         ? (newState as (prev: T) => T)(state)
         : newState
 
-      await container.updateState(resolvedState)
+      await container.setState(resolvedState)
       
       if (mountedRef.current) {
         setState(resolvedState)
@@ -158,7 +154,7 @@ export function useContainerState<T = any>(
   const refresh = useCallback(async () => {
     if (container) {
       try {
-        const currentState = container.state
+        const currentState = container.getState() as T
         if (mountedRef.current) {
           setState(currentState)
           onStateChange?.(currentState)
@@ -191,10 +187,6 @@ export function useContainerState<T = any>(
     return () => {
       mountedRef.current = false
       if (container) {
-        const unsubscribe = (container as any)._unsubscribe
-        if (unsubscribe) {
-          unsubscribe()
-        }
         container.stop().catch(console.error)
       }
     }

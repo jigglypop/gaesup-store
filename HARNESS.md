@@ -594,10 +594,27 @@ import { SCHEMAS } from '../fixtures/schemas';
     - 잔여: causal chain(parent 링크, §53), container 스코프 snapshot(§57 —
       노드 id prefix 규약으로 대응 가능), time travel UI(§56 DevTools)
 
-15. **15주기+ 로드맵** ("전부 구현" 범위 — V1/MVP 1.0 기준, V2 제외):
-    - [ ] Scheduler 자동 배칭 옵션 (§20) + Transaction 메타데이터 (§28)
-    - [ ] React adapter repair: 기존 훅들의 core 시그니처 드리프트 해소
-      (react tsc green 만들기)
+15. **15주기**: Scheduler 자동 배칭 + Transaction 메타데이터 + React repair
+    ✅ 완료 (2026-08-15)
+    - §20 자동 배칭: `configureScheduler({flushMode: 'sync'|'microtask'})` —
+      microtask 모드에서 동일 turn의 모든 쓰기가 flush 1회로 병합(값 커밋은
+      즉시, 알림만 지연 — pull 일관성 유지). 기본은 sync(기존 동작 불변)
+    - §28 Transaction 메타데이터: `subscribeTransactions` —
+      `{id: 'txn:N', writes: [nodeId], status: COMMITTED|ROLLED_BACK}`,
+      중첩은 최외곽 1회 보고, 리스너 예외 격리
+    - React adapter repair (5주기 잔여 해소): 기존 훅들을 현재 core 계약에
+      맞게 수리 — `manager.run(name, config)` → `createContainer`,
+      `updateState`/`.state` → `setState()`/`getState()`, 제거된
+      per-instance subscribe 의존 삭제, `manager.events.on` → `manager.on`
+      (event type 열거), `manager.getMetrics` → `listContainers()+
+      getContainer(id).getMetrics()`, JS reducer 등록은 core의 fail-closed
+      계약(`registerReducer()` throw) 그대로 노출, utils의 리소스 제한
+      필드는 ExtendedContainerConfig로 분리. **react `tsc --noEmit` green**
+    - 테스트 현황: core(vitest) 190개 + react(vitest) 11개 green,
+      core/react 타입체크 green.
+    - **"전부 구현" 로드맵(V1 범위) 종료.** 남은 스펙 영역은 계획대로 미착수
+      유지: V2(§58-64 SSR/Worker/원격), DevTools UI(§54-56), CLI(§65-67),
+      §53 causal parent 링크, §72 group, §76 hot replacement
    - Repeated mount/unmount
    - Error boundary
    - Memory leak 확인

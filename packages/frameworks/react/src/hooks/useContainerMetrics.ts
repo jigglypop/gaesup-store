@@ -14,7 +14,17 @@ export function useContainerMetrics(options: UseContainerMetricsOptions = {}) {
     }
 
     const refresh = () => {
-      setMetrics(manager.getMetrics() as Record<string, ContainerMetrics>)
+      try {
+        const next: Record<string, ContainerMetrics> = {}
+        for (const metadata of manager.listContainers()) {
+          const id = typeof metadata.id === 'string' ? metadata.id : ''
+          if (!id) continue
+          next[id] = manager.getContainer(id).getMetrics()
+        }
+        setMetrics(next)
+      } catch {
+        // Runtime not ready yet; keep the previous snapshot.
+      }
     }
 
     refresh()

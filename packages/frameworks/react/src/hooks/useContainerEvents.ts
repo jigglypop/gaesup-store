@@ -1,7 +1,14 @@
 import { useEffect, useState } from 'react'
-import type { ContainerEvent } from 'gaesup-state'
+import type { ContainerEvent, ContainerEventType } from 'gaesup-state'
 import type { UseContainerEventsOptions } from '../types'
 import { useContainerContext } from '../context/ContainerContext'
+
+const ALL_EVENT_TYPES: ContainerEventType[] = [
+  'container:created',
+  'container:started',
+  'container:stopped',
+  'container:error'
+]
 
 export function useContainerEvents(options: UseContainerEventsOptions = {}) {
   const { eventTypes, bufferSize = 100 } = options
@@ -13,9 +20,9 @@ export function useContainerEvents(options: UseContainerEventsOptions = {}) {
       return undefined
     }
 
-    const types = eventTypes?.length ? eventTypes : ['*']
+    const types = eventTypes?.length ? eventTypes : ALL_EVENT_TYPES
     const unsubscribers = types.map((eventType) =>
-      manager.events.on(String(eventType), (event: ContainerEvent) => {
+      manager.on(eventType, (event: ContainerEvent) => {
         setEvents((current) => [...current, event].slice(-bufferSize))
       })
     )

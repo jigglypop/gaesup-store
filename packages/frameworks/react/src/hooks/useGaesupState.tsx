@@ -118,11 +118,9 @@ export function createGaesupStore<T = any>(
   // WASM 코어에 스토어 생성
   GaesupCore.createStore(storeId, initialState);
 
-  // 커스텀 리듀서가 있으면 등록
+  // JS 리듀서 등록은 core가 fail-closed로 막는다 (Rust WASM 경로 강제).
   if (reducer) {
-    GaesupCore.registerReducer(storeId, (state: any, action: Action) => {
-      return reducer(state, action);
-    });
+    GaesupCore.registerReducer();
   }
 }
 
@@ -151,14 +149,8 @@ export function createSlice<T>(options: CreateSliceOptions<T>) {
       payload,
     });
 
-    // 리듀서 등록
-    GaesupCore.registerReducer(name, (state: T, action: Action) => {
-      if (action.type === `${name}/${actionType}`) {
-        const result = reducers[actionType](state, action);
-        return result !== undefined ? result : state;
-      }
-      return state;
-    });
+    // JS 리듀서 등록은 core가 fail-closed로 막는다 (Rust WASM 경로 강제).
+    GaesupCore.registerReducer();
   });
 
   return {
