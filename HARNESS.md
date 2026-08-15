@@ -580,9 +580,22 @@ import { SCHEMAS } from '../fixtures/schemas';
     - 테스트 현황: TS(vitest) 174개 green (runtime 13개 신규), 타입체크 green.
     - 잔여: config override(§47), hot replacement(§76), container group(§72)
 
-14. **14주기+ 로드맵** ("전부 구현" 범위 — V1/MVP 1.0 기준, V2 제외):
+14. **14주기**: Snapshot/restore + trace ✅ 완료 (2026-08-15)
+    - Runtime Spec v0.1 §52-57 그래프 계층 대응 (`graph.ts` 확장)
+    - `snapshotGraph(filter?)`: state 노드 id 기준 값 캡처 (WeakRef
+      registry — GC된 노드 자동 정리), `restoreGraph(snapshot)`: 원자 복원
+      (batch 1회 알림), 미지 id 무시(fail-safe), 동일 값 무알림, derived는
+      복원된 state에서 재계산
+    - `subscribeGraphTrace`: 'state-change'(set/rollback/restore 모두) +
+      'derived-recompute' 이벤트 — node id/version/timestamp, 리스너 예외
+      격리(쓰기 불파괴), 구독 해제 후 무발행
+    - 테스트 현황: TS(vitest) 183개 green (snapshot/trace 9개 신규),
+      타입체크 green.
+    - 잔여: causal chain(parent 링크, §53), container 스코프 snapshot(§57 —
+      노드 id prefix 규약으로 대응 가능), time travel UI(§56 DevTools)
+
+15. **15주기+ 로드맵** ("전부 구현" 범위 — V1/MVP 1.0 기준, V2 제외):
     - [ ] Scheduler 자동 배칭 옵션 (§20) + Transaction 메타데이터 (§28)
-    - [ ] Snapshot/restore + trace 이벤트 (§52-57 그래프 계층)
     - [ ] React adapter repair: 기존 훅들의 core 시그니처 드리프트 해소
       (react tsc green 만들기)
    - Repeated mount/unmount

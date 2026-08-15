@@ -130,6 +130,8 @@ const rename = command({
 });
 ```
 
+The graph is observable: `snapshotGraph(filter?)` captures state values by node id and `restoreGraph(snapshot)` brings them back atomically (unknown ids skipped, unchanged values silent) — derived nodes recompute from the restored state. `subscribeGraphTrace` streams `state-change` / `derived-recompute` events (including rollback writes) with node id, version, and timestamp; a broken listener never breaks a write.
+
 `graphStream` brings realtime sources (WebSocket, SSE, BroadcastChannel) into the same graph. Pushed values land in graph state, so derived nodes downstream react per event; source errors surface as status `error` with teardown, and late events after disconnect are dropped.
 
 ```typescript
@@ -245,6 +247,7 @@ const count = GaesupCore.select('orders', 'count');
 | `transaction` / `command` | Atomic writes, optimistic updates with rollback |
 | `graphStream` | Realtime sources as graph nodes |
 | `defineContainer` / `createRuntime` | Container lifecycle, startup ordering, health |
+| `snapshotGraph` / `restoreGraph` / `subscribeGraphTrace` | Time travel and observability |
 | `watch` | Selector-based dependency tracking |
 | `resource` / `query` | API request state |
 | `GaesupCore.pipeline` | Batching several dispatches |

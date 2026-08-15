@@ -75,6 +75,42 @@ let nodeSeq = 0;
 let globalVersion = 0;
 let batchDepth = 0;
 let activeJournal: Map<StateInternal<any>, any> | null = null;
+
+// --- Trace (§52-53) ---------------------------------------------------------
+
+export interface GraphTraceEvent {
+  id: number;
+  type: 'state-change' | 'derived-recompute';
+  node: string;
+  version: number;
+  timestamp: number;
+}
+
+let traceSeq = 0;
+const traceListeners = new Set<(event: GraphTraceEvent) => void>();
+
+export function subscribeGraphTrace(listener: (event: GraphTraceEvent) => void): () => void {
+  traceListeners.add(listener);
+  return () => {
+    traceListeners.delete(listener);
+  };
+}
+
+function emitTrace(type: GraphTraceEvent['type'], node: string, version: number) {
+  if (traceListeners.size === 0) return;
+  const event: GraphTraceEvent = { id: ++traceSeq, type, node, version, timestamp: Date.now() };
+  for (const listener of traceListeners) {
+    try {
+      listener(event);
+    } catch {
+      // A broken trace listener must never break the graph write.
+    }
+  }
+}
+
+// --- State registry for snapshot/restore (§56-57) ---------------------------
+
+const stateRegistry = new Map<string, WeakRef<StateInternal<any>>>();
 let activeCompute: DerivedInternal<any> | null = null;
 const computeStack: DerivedInternal<any>[] = [];
 const pendingNotifications = new Set<AnyNode>();
@@ -129,6 +165,7 @@ function actualize<T>(node: DerivedInternal<T>): void {
     }
     node.initialized = true;
     node.lastGlobalVersion = globalVersion;
+    emitTrace('derived-recompute', node.id, node.version);
   } finally {
     node.computing = false;
     computeStack.pop();
@@ -186,6 +223,7 @@ export function state<T>(initialValue: T, options: GraphNodeOptions<T> = {}): St
     listeners: new Set(),
     lastNotifiedValue: resolvedInitial
   };
+  stateRegistry.set(node.id, new WeakRef(node));
 
   if (persist) {
     // An internal subscriber: committed changes reach the adapter after the
@@ -217,6 +255,7 @@ export function state<T>(initialValue: T, options: GraphNodeOptions<T> = {}): St
       node.value = resolved;
       node.version += 1;
       globalVersion += 1;
+      emitTrace('state-change', node.id, node.version);
       collectAffected(node, new Set());
       if (batchDepth === 0) flushNotifications();
     },
@@ -284,8 +323,43 @@ function rollbackJournal(journal: Map<StateInternal<any>, any>) {
     node.value = previous;
     node.version += 1;
     globalVersion += 1;
+    emitTrace('state-change', node.id, node.version);
     collectAffected(node, new Set());
   }
+}
+
+// --- Snapshot / restore (§56-57) --------------------------------------------
+
+export function snapshotGraph(filter?: (id: string) => boolean): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  for (const [id, ref] of stateRegistry) {
+    const node = ref.deref();
+    if (!node) {
+      stateRegistry.delete(id);
+      continue;
+    }
+    if (filter && !filter(id)) continue;
+    result[id] = node.value;
+  }
+  return result;
+}
+
+// Restores captured values atomically: unknown ids are skipped, unchanged
+// values neither notify nor bump versions, and subscribers hear one wave.
+export function restoreGraph(snapshot: Record<string, unknown>): void {
+  batch(() => {
+    for (const [id, value] of Object.entries(snapshot)) {
+      const node = stateRegistry.get(id)?.deref();
+      if (!node) continue;
+      if (node.equals(node.value, value)) continue;
+      if (activeJournal && !activeJournal.has(node)) activeJournal.set(node, node.value);
+      node.value = value;
+      node.version += 1;
+      globalVersion += 1;
+      emitTrace('state-change', node.id, node.version);
+      collectAffected(node, new Set());
+    }
+  });
 }
 
 // Atomic write group (spec §27-28): notifications are deferred until commit,
