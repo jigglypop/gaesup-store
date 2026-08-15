@@ -130,6 +130,74 @@ describe('graphResource', () => {
     expect(statuses).toEqual(['loading', 'success']);
   });
 
+  it('serves a fresh cache hit without refetching (staleTime)', async () => {
+    const userId = state(1);
+    const fetch = vi.fn(async ([, id]: unknown[]) => `user-${id}`);
+    const res = graphResource({
+      key: () => ['user', userId.get()],
+      fetch,
+      staleTime: 60_000
+    });
+    res.subscribe(() => {});
+    await tick();
+
+    userId.set(2);
+    await tick();
+    expect(fetch).toHaveBeenCalledTimes(2);
+
+    userId.set(1); // revisit within staleTime -> cache hit, no fetch
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(res.get().status).toBe('success');
+    expect(res.get().data).toBe('user-1');
+  });
+
+  it('revalidates a stale key while serving the cached data (SWR)', async () => {
+    const userId = state(1);
+    let generation = 0;
+    const fetch = vi.fn(async ([, id]: unknown[]) => `user-${id}-gen${++generation}`);
+    const res = graphResource({ key: () => ['user', userId.get()], fetch });
+    const statuses: string[] = [];
+    res.subscribe((snapshot) => statuses.push(`${snapshot.status}:${snapshot.data ?? ''}`));
+    await tick();
+
+    userId.set(2);
+    await tick();
+    userId.set(1); // staleTime defaults to 0 -> stale hit
+    expect(res.get().status).toBe('stale');
+    expect(res.get().data).toBe('user-1-gen1'); // cached data stays visible
+
+    await tick();
+    expect(res.get().status).toBe('success');
+    expect(res.get().data).toBe('user-1-gen3');
+  });
+
+  it('dedupes concurrent fetches for the same key', async () => {
+    const gate = deferred<string>();
+    const fetch = vi.fn(() => gate.promise);
+    const res = graphResource({ key: () => ['user'], fetch });
+    res.subscribe(() => {});
+
+    const first = res.refetch();
+    const second = res.refetch();
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    gate.resolve('data');
+    await expect(first).resolves.toBe('data');
+    await expect(second).resolves.toBe('data');
+  });
+
+  it('invalidate clears the cache and refetches the active key', async () => {
+    const fetch = vi.fn(async () => 'data');
+    const res = graphResource({ key: () => ['user'], fetch, staleTime: 60_000 });
+    res.subscribe(() => {});
+    await tick();
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    await res.invalidate();
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(res.get().status).toBe('success');
+  });
+
   it('supports manual refetch with the current key', async () => {
     const userId = state(7);
     const fetch = vi.fn(async ([, id]: unknown[]) => `user-${id}`);

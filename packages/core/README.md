@@ -75,6 +75,8 @@ const userName = derived(() => user.get().data?.name ?? 'anonymous');
 userId.set(2); // key changed -> automatic refetch -> userName recomputes
 ```
 
+Resources cache per key: a fresh hit (within `staleTime`) serves the cache without fetching, a stale hit serves cached data (status `stale`) while revalidating, concurrent same-key fetches are deduplicated, and `invalidate()` is the explicit escape hatch. State persists through adapters — `state(0, { persist: webStoragePersistence('count', localStorage) })` loads on creation and saves committed changes only (rollbacks never persist).
+
 `createGraphMesh` wires containers together without shared imports. A container exposes an explicit interface into a namespace; consumers resolve it by address and receive read-only facades — external code can read and subscribe but never mutate.
 
 ```typescript

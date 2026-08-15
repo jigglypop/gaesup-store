@@ -2,10 +2,16 @@
 // dependency-graph node. The key is a derived node, so any state read inside
 // `key()` is tracked automatically — when it changes, the resource refetches
 // without manual effects or invalidation calls.
+//
+// Cache layer (§23): per-key entries with staleTime. A fresh hit serves the
+// cache without fetching; a stale hit serves the cached data immediately
+// (status 'stale') while revalidating in the background. Concurrent fetches
+// for the same key are deduplicated. `invalidate()` is the explicit escape
+// hatch (§24) — the primary invalidation path stays the dependency graph.
 
 import { derived, state } from './graph';
 
-export type GraphResourceStatus = 'idle' | 'loading' | 'success' | 'error';
+export type GraphResourceStatus = 'idle' | 'loading' | 'success' | 'error' | 'stale';
 
 export interface GraphResourceState<T> {
   data: T | undefined;
@@ -17,6 +23,7 @@ export interface GraphResourceOptions<T> {
   id?: string;
   key: () => unknown[];
   fetch: (key: unknown[]) => Promise<T>;
+  staleTime?: number;
 }
 
 export interface GraphResource<T> {
@@ -24,12 +31,14 @@ export interface GraphResource<T> {
   get(): GraphResourceState<T>;
   subscribe(listener: (snapshot: GraphResourceState<T>) => void): () => void;
   refetch(): Promise<T>;
+  invalidate(): Promise<void>;
 }
 
 let resourceSeq = 0;
 
 export function graphResource<T>(options: GraphResourceOptions<T>): GraphResource<T> {
   const id = options.id || `resource:${++resourceSeq}`;
+  const staleTime = options.staleTime ?? 0;
 
   const snapshot = state<GraphResourceState<T>>(
     { data: undefined, error: undefined, status: 'idle' },
@@ -41,12 +50,29 @@ export function graphResource<T>(options: GraphResourceOptions<T>): GraphResourc
     equals: (a, b) => JSON.stringify(a) === JSON.stringify(b)
   });
 
+  const cache = new Map<string, { data: T; updatedAt: number }>();
+  const inflight = new Map<string, Promise<T>>();
   let fetchSeq = 0;
   let activated = false;
 
-  const runFetch = (key: unknown[]): Promise<T> => {
+  const runFetch = (key: unknown[], force = false): Promise<T> => {
+    const keyStr = JSON.stringify(key);
+
+    const existing = inflight.get(keyStr);
+    if (existing) return existing;
+
+    const cached = cache.get(keyStr);
+    if (!force && cached && staleTime > 0 && Date.now() - cached.updatedAt < staleTime) {
+      snapshot.set({ data: cached.data, error: undefined, status: 'success' });
+      return Promise.resolve(cached.data);
+    }
+
     const seq = ++fetchSeq;
-    snapshot.set((previous) => ({ ...previous, status: 'loading' }));
+    snapshot.set((previous) =>
+      cached
+        ? { data: cached.data, error: undefined, status: 'stale' }
+        : { ...previous, status: 'loading' }
+    );
 
     let promise: Promise<T>;
     try {
@@ -54,13 +80,17 @@ export function graphResource<T>(options: GraphResourceOptions<T>): GraphResourc
     } catch (error) {
       promise = Promise.reject(error);
     }
+    inflight.set(keyStr, promise);
 
     promise.then(
       (data) => {
+        inflight.delete(keyStr);
+        cache.set(keyStr, { data, updatedAt: Date.now() });
         if (seq !== fetchSeq) return; // stale response: a newer fetch owns the state
         snapshot.set({ data, error: undefined, status: 'success' });
       },
       (error) => {
+        inflight.delete(keyStr);
         if (seq !== fetchSeq) return;
         snapshot.set((previous) => ({ data: previous.data, error, status: 'error' }));
       }
@@ -91,7 +121,11 @@ export function graphResource<T>(options: GraphResourceOptions<T>): GraphResourc
     },
     refetch() {
       ensureWatching();
-      return runFetch(keyNode.get());
+      return runFetch(keyNode.get(), true);
+    },
+    async invalidate() {
+      cache.clear();
+      if (activated) await runFetch(keyNode.get(), true);
     }
   };
 }

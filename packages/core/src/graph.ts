@@ -2,11 +2,14 @@
 // dependency tracking, dirty propagation limited to the affected subgraph,
 // batched notifications, and fail-closed cycle detection.
 
+import type { PersistenceAdapter } from './graph-persist';
+
 export type EqualsFn<T> = (a: T, b: T) => boolean;
 
 export interface GraphNodeOptions<T> {
   id?: string;
   equals?: EqualsFn<T>;
+  persist?: PersistenceAdapter<T>;
 }
 
 export interface StateNode<T> {
@@ -162,16 +165,39 @@ function flushNotifications() {
 }
 
 export function state<T>(initialValue: T, options: GraphNodeOptions<T> = {}): StateNode<T> {
+  const persist = options.persist;
+  let resolvedInitial = initialValue;
+  if (persist) {
+    try {
+      const loaded = persist.load();
+      if (loaded !== undefined) resolvedInitial = loaded;
+    } catch {
+      // Fail-safe: a broken load falls back to the initial value.
+    }
+  }
+
   const node: StateInternal<T> = {
     kind: 'state',
     id: options.id || `state:${++nodeSeq}`,
-    value: initialValue,
+    value: resolvedInitial,
     version: 0,
     equals: options.equals || defaultEquals,
     dependents: new Set(),
     listeners: new Set(),
-    lastNotifiedValue: initialValue
+    lastNotifiedValue: resolvedInitial
   };
+
+  if (persist) {
+    // An internal subscriber: committed changes reach the adapter after the
+    // flush's equality cutoff, so rollbacks and no-op writes never persist.
+    node.listeners.add((value) => {
+      try {
+        persist.save(value);
+      } catch {
+        // A failing save must not break the state write or other listeners.
+      }
+    });
+  }
 
   return {
     kind: 'state',

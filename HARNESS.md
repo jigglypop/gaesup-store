@@ -544,15 +544,25 @@ import { SCHEMAS } from '../fixtures/schemas';
       useContainerEvents/useContainerMetrics — 5주기 잔여의 실체). 신규
       파일은 에러 없음. 12주기+ 로드맵의 adapter repair에서 해소 예정.
 
-12. **12주기+ 로드맵** ("전부 구현" 범위 — V1/MVP 1.0 기준, V2(§58-64
+12. **12주기**: Resource cache + persistence ✅ 완료 (2026-08-15)
+    - §23 캐시 계층 (`graph-resource.ts`): key별 캐시 + `staleTime`(fresh
+      hit은 fetch 생략), stale hit은 캐시 데이터 즉시 노출(status 'stale')
+      + 백그라운드 재검증(SWR), 동일 key 동시 fetch dedup(in-flight 공유),
+      `invalidate()` escape hatch(§24 — 기본 invalidation 경로는 여전히
+      그래프의 key 추적)
+    - §31 persistence (`graph-persist.ts` + `state({persist})`):
+      `memoryPersistence`/`webStoragePersistence`(JSON) 어댑터, 생성 시
+      load, 커밋된 변경만 save(flush의 equality cutoff 뒤에 실행되어
+      rollback/no-op은 저장 안 됨). fail-safe: load 실패 → 초기값 폴백,
+      save 실패 → state 쓰기 영향 없음
+    - 테스트 현황: TS(vitest) 161개 green (캐시 4개 + persistence 8개 신규),
+      타입체크 green.
+
+13. **13주기+ 로드맵** ("전부 구현" 범위 — V1/MVP 1.0 기준, V2(§58-64
     SSR/Worker/원격 protocol) 제외):
-    - [ ] Resource 캐시 계층 (§23-24): staleTime, key별 캐시 유지, dedup,
-      command commit → 자동 invalidation
     - [ ] Container 통합 (MVP 0.5): `defineContainer`/`createRuntime`,
-      lifecycle 상태기계(§10, machine.rs dogfooding), mesh 자동 배선,
-      startup ordering(§73-74), health(§42-44)
-    - [ ] Persistence (§31): 그래프 state persist 옵션 + 어댑터
-      (localStorage/sessionStorage/memory)
+      lifecycle 상태기계(§10), mesh 자동 배선, startup ordering(§73-74),
+      health(§42-44), failure isolation(§43)
     - [ ] Scheduler 자동 배칭 옵션 (§20) + Transaction 메타데이터 (§28)
     - [ ] Snapshot/restore + trace 이벤트 (§52-57 그래프 계층)
     - [ ] React adapter repair: 기존 훅들의 core 시그니처 드리프트 해소
