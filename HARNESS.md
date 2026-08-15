@@ -529,7 +529,34 @@ import { SCHEMAS } from '../fixtures/schemas';
       다음 후보: MVP 0.5 (container lifecycle 통합·dynamic loading·health를
       기존 ContainerManager와 연결), React adapter의 graph 노드 훅
 
-11. **11주기+**: Framework adapter robustness
+11. **11주기**: React graph adapter (`useGaesup`) ✅ 완료 (2026-08-15)
+    - Runtime Spec v0.1 §32 대응 — MVP 0.1의 미완이던 React Adapter 완성
+      (`packages/frameworks/react/src/hooks/useGaesup.ts`)
+    - `useSyncExternalStore` 기반, get/subscribe 계약을 가진 모든 그래프
+      노드(state/derived/mesh facade/graphResource/graphStream) 바인딩
+    - 그래프 cutoff와 결합: 값 무변경 업데이트는 리렌더 zero, batch는
+      리렌더 1회, unmount 시 구독 해제
+    - graphResource 스냅샷 바인딩: loading→success 전이, key 변경 시
+      effect 코드 없이 자동 refetch 반영
+    - 테스트 현황: react(vitest) 11개 green (useGaesup 6개 신규).
+    - 주의: react 패키지 `tsc --noEmit`은 **기존** 훅들의 사전 존재하던
+      core 시그니처 드리프트로 실패 (useContainerState/useGaesupState/
+      useContainerEvents/useContainerMetrics — 5주기 잔여의 실체). 신규
+      파일은 에러 없음. 12주기+ 로드맵의 adapter repair에서 해소 예정.
+
+12. **12주기+ 로드맵** ("전부 구현" 범위 — V1/MVP 1.0 기준, V2(§58-64
+    SSR/Worker/원격 protocol) 제외):
+    - [ ] Resource 캐시 계층 (§23-24): staleTime, key별 캐시 유지, dedup,
+      command commit → 자동 invalidation
+    - [ ] Container 통합 (MVP 0.5): `defineContainer`/`createRuntime`,
+      lifecycle 상태기계(§10, machine.rs dogfooding), mesh 자동 배선,
+      startup ordering(§73-74), health(§42-44)
+    - [ ] Persistence (§31): 그래프 state persist 옵션 + 어댑터
+      (localStorage/sessionStorage/memory)
+    - [ ] Scheduler 자동 배칭 옵션 (§20) + Transaction 메타데이터 (§28)
+    - [ ] Snapshot/restore + trace 이벤트 (§52-57 그래프 계층)
+    - [ ] React adapter repair: 기존 훅들의 core 시그니처 드리프트 해소
+      (react tsc green 만들기)
    - Repeated mount/unmount
    - Error boundary
    - Memory leak 확인

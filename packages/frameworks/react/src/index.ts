@@ -16,6 +16,10 @@ export { useContainerRegistry } from './hooks/useContainerRegistry'
 export { useContainerMetrics } from './hooks/useContainerMetrics'
 export { useContainerEvents } from './hooks/useContainerEvents'
 export { useContainerManager } from './hooks/useContainerManager'
+export { useRuntimeMetrics } from './hooks/useRuntimeMetrics'
+export type { UseRuntimeMetricsOptions } from './hooks/useRuntimeMetrics'
+export { useGaesup } from './hooks/useGaesup'
+export type { GaesupReadableNode } from './hooks/useGaesup'
 
 // Provider Components
 export { ContainerProvider } from './components/ContainerProvider'
