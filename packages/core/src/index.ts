@@ -2072,5 +2072,6 @@ function attachAutoControls<T extends Record<string, any>>(
 }
 
 export { ensureReady as initGaesupCore };
+export * from './graph';
 export * from './micro-sandbox';
 export * from './sandbox-orchestrator';

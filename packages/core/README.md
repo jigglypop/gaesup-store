@@ -38,6 +38,26 @@ counter.user.name = 'Grace';
 
 `gaesup` tracks object mutations through a proxy and sends path patches to the Rust/WASM store.
 
+## Reactive Graph
+
+`state` and `derived` form a dependency graph with automatic tracking. Only the affected subgraph recomputes, and subscribers are notified once per change (glitch-free through diamonds).
+
+```typescript
+import { state, derived, batch } from 'gaesup-state';
+
+const count = state(1);
+const doubled = derived(() => count.get() * 2);
+
+doubled.subscribe((value) => console.log(value));
+
+batch(() => {
+  count.set(2);
+  count.set(3);
+}); // one notification: 6
+```
+
+Dependency cycles fail closed with a `DependencyCycleError` (`GAESUP_DEPENDENCY_CYCLE`) that includes the cycle path.
+
 ## Resource / Query
 
 Use `resource` when API state should live with the same store model.
@@ -134,6 +154,7 @@ const count = GaesupCore.select('orders', 'count');
 | `gaesup` | Minimal object-style state |
 | `$store` | Alias for `gaesup` |
 | `atom` | One primitive or small value |
+| `state` / `derived` / `batch` | Reactive dependency graph |
 | `watch` | Selector-based dependency tracking |
 | `resource` / `query` | API request state |
 | `GaesupCore.pipeline` | Batching several dispatches |

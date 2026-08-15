@@ -438,7 +438,26 @@ import { SCHEMAS } from '../fixtures/schemas';
      사용), DevTools 브리지-예제 시그니처 불일치, ContainerMetrics 타입
      계약 미고정.
 
-6. **6주기+**: Framework adapter robustness
+6. **6주기**: Reactive dependency graph (state/derived/batch) ✅ 완료 (2026-08-15)
+   - Runtime Spec v0.1 §16-20 / MVP 0.1 대응 — 순수 JS 그래프 엔진
+     (`packages/core/src/graph.ts`, WASM 경계 없음)
+   - `state()`: get/set(updater 지원)/subscribe, 단조 증가 version, 동일 값
+     set은 no-op (custom `equals` 지원)
+   - `derived()`: 실행 중 자동 의존성 수집, lazy 평가 + 캐싱, dynamic
+     retracking (분기 전환 시 안 읽는 dep 변경은 재계산·알림 없음), 값
+     불변 시 version 미증가로 downstream 전파 차단 (cutoff)
+   - Dirty propagation: affected subgraph만 재계산 (O(affected)),
+     diamond glitch-free (알림 1회, 일관된 값)
+   - `batch()`: 다중 set → 알림 1회, 중첩 batch는 최외곽에서 flush,
+     콜백 throw에도 flush 보장, batch 내 revert 시 알림 생략
+   - Fail-closed: 순환 의존 시 `DependencyCycleError`
+     (`GAESUP_DEPENDENCY_CYCLE`, 순환 경로 포함), compute 실패 시
+     미초기화 유지 → 다음 read에서 재시도
+   - 테스트 현황: TS(vitest) 106개 green (graph 20개 신규), 타입체크 green.
+   - 잔여: expose/consume을 그래프 노드 계약으로 연결, resource를 그래프
+     노드로 승격 (spec §21-24), Rust diff/serialization 가속 여부 결정
+
+7. **7주기+**: Framework adapter robustness
    - Repeated mount/unmount
    - Error boundary
    - Memory leak 확인
