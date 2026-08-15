@@ -454,10 +454,27 @@ import { SCHEMAS } from '../fixtures/schemas';
      (`GAESUP_DEPENDENCY_CYCLE`, 순환 경로 포함), compute 실패 시
      미초기화 유지 → 다음 read에서 재시도
    - 테스트 현황: TS(vitest) 106개 green (graph 20개 신규), 타입체크 green.
-   - 잔여: expose/consume을 그래프 노드 계약으로 연결, resource를 그래프
-     노드로 승격 (spec §21-24), Rust diff/serialization 가속 여부 결정
+   - 잔여: expose/consume을 그래프 노드 계약으로 연결, Rust
+     diff/serialization 가속 여부 결정
 
-7. **7주기+**: Framework adapter robustness
+7. **7주기**: Graph-native resource (`graphResource`) ✅ 완료 (2026-08-15)
+   - Runtime Spec v0.1 §21-24 / MVP 0.2 대응 — 공개 `state`/`derived` API만
+     조합한 순수 그래프 구현 (`packages/core/src/graph-resource.ts`)
+   - key가 derived 노드: `key()` 안에서 읽은 state가 자동 추적되어 변경 시
+     자동 refetch (§71 "useEffect 불필요" 구조 성립). key는 JSON deep-equal
+     비교 — 값이 같으면 refetch 없음, 무관한 state 변경도 refetch 없음
+   - Lazy activation: 첫 get/subscribe 전에는 fetch하지 않음
+   - Fail-closed: fetch 거부 시 status 'error' + error 노출(silent fail
+     없음), key 변경 시 재시도 후 error 해제. stale response는 fetch 시퀀스
+     가드로 폐기 (최신 fetch만 상태 소유)
+   - 그래프 통합: resource 상태가 state 노드라 derived가 `res.get().data`를
+     추적 가능 — 데이터 도착 시 downstream 재계산·알림
+   - `refetch()` escape hatch (현재 key로 수동 재실행)
+   - 테스트 현황: TS(vitest) 117개 green (graph-resource 8개 신규), 타입체크 green.
+   - 잔여: subscriber-count 기반 lifecycle (§41 RETAINED/DISPOSED),
+     staleTime/캐시 dedup (§23), command 커밋 시 자동 invalidation (§24)
+
+8. **8주기+**: Framework adapter robustness
    - Repeated mount/unmount
    - Error boundary
    - Memory leak 확인

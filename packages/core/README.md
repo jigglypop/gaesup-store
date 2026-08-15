@@ -58,6 +58,23 @@ batch(() => {
 
 Dependency cycles fail closed with a `DependencyCycleError` (`GAESUP_DEPENDENCY_CYCLE`) that includes the cycle path.
 
+`graphResource` puts server/IO state on the same graph. Any state read inside `key()` is tracked automatically — when it changes, the resource refetches without effects or manual invalidation, and stale responses never overwrite newer ones.
+
+```typescript
+import { state, derived, graphResource } from 'gaesup-state';
+
+const userId = state(1);
+
+const user = graphResource({
+  key: () => ['user', userId.get()],
+  fetch: async ([, id]) => (await fetch(`/api/users/${id}`)).json()
+});
+
+const userName = derived(() => user.get().data?.name ?? 'anonymous');
+
+userId.set(2); // key changed -> automatic refetch -> userName recomputes
+```
+
 ## Resource / Query
 
 Use `resource` when API state should live with the same store model.
@@ -155,6 +172,7 @@ const count = GaesupCore.select('orders', 'count');
 | `$store` | Alias for `gaesup` |
 | `atom` | One primitive or small value |
 | `state` / `derived` / `batch` | Reactive dependency graph |
+| `graphResource` | Server state as a graph node (auto refetch on key change) |
 | `watch` | Selector-based dependency tracking |
 | `resource` / `query` | API request state |
 | `GaesupCore.pipeline` | Batching several dispatches |
