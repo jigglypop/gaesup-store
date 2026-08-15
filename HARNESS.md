@@ -474,7 +474,26 @@ import { SCHEMAS } from '../fixtures/schemas';
    - 잔여: subscriber-count 기반 lifecycle (§41 RETAINED/DISPOSED),
      staleTime/캐시 dedup (§23), command 커밋 시 자동 invalidation (§24)
 
-8. **8주기+**: Framework adapter robustness
+8. **8주기**: Expose/consume mesh (`createGraphMesh`) ✅ 완료 (2026-08-15)
+   - Runtime Spec v0.1 §14, §44 대응 (`packages/core/src/graph-mesh.ts`)
+   - 컨테이너가 namespace에 명시적 인터페이스 공개(`expose`), 소비자는
+     주소(`"auth.user"`)로 해석(`consume`) — 내부 import 없이 연결
+   - Invariant I2 강제: 노드형 값(state/derived/resource)은 read-only
+     facade(get/subscribe만)로 전달 — 외부 set 불가. 함수(command)와 일반
+     값은 그대로 전달
+   - 그래프 통합: 소비자 쪽 derived가 consumed 노드를 자동 추적 (facade
+     get이 원본 노드 위임이라 tracking 공짜)
+   - Fail-closed: 미공개 주소 required(기본) 소비 시
+     `GAESUP_DEPENDENCY_UNAVAILABLE`, `required:false`는 undefined 반환,
+     중복 공개 `GAESUP_EXPOSE_CONFLICT` (namespace 확장은 새 key만 허용),
+     주소 형식 위반 `GAESUP_INVALID_ADDRESS`
+   - 관찰성: `mesh.dependencies()`가 consumer edge 기록 반환 (개발 원칙 6
+     "dependency를 숨기지 않는다")
+   - 테스트 현황: TS(vitest) 127개 green (graph-mesh 10개 신규), 타입체크 green.
+   - 잔여: startup ordering(§73-74)과 연결한 late-binding 해석, 인스턴스
+     주소(`chart/BTC`) 지원, 컨테이너 lifecycle과 mesh 등록/해제 연동
+
+9. **9주기+**: Framework adapter robustness
    - Repeated mount/unmount
    - Error boundary
    - Memory leak 확인

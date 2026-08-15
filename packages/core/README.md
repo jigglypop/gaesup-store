@@ -75,6 +75,20 @@ const userName = derived(() => user.get().data?.name ?? 'anonymous');
 userId.set(2); // key changed -> automatic refetch -> userName recomputes
 ```
 
+`createGraphMesh` wires containers together without shared imports. A container exposes an explicit interface into a namespace; consumers resolve it by address and receive read-only facades — external code can read and subscribe but never mutate.
+
+```typescript
+import { createGraphMesh, state } from 'gaesup-state';
+
+const mesh = createGraphMesh();
+mesh.expose('auth', { user: state(null), logout: () => {} });
+
+const user = mesh.consume('auth.user'); // read-only: get/subscribe, no set
+const optional = mesh.consume('reco.data', { required: false }); // undefined if absent
+```
+
+Missing required dependencies fail closed with `GAESUP_DEPENDENCY_UNAVAILABLE`; duplicate exposure with `GAESUP_EXPOSE_CONFLICT`. `mesh.dependencies()` returns the recorded consumer edges for introspection.
+
 ## Resource / Query
 
 Use `resource` when API state should live with the same store model.
@@ -173,6 +187,7 @@ const count = GaesupCore.select('orders', 'count');
 | `atom` | One primitive or small value |
 | `state` / `derived` / `batch` | Reactive dependency graph |
 | `graphResource` | Server state as a graph node (auto refetch on key change) |
+| `createGraphMesh` | Expose/consume contracts between containers |
 | `watch` | Selector-based dependency tracking |
 | `resource` / `query` | API request state |
 | `GaesupCore.pipeline` | Batching several dispatches |
