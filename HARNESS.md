@@ -510,7 +510,26 @@ import { SCHEMAS } from '../fixtures/schemas';
      (idle/running/error) 관측, command 커밋 → resource 자동 invalidation
      (§24), recordWrites가 transaction 내부에서 중첩될 때의 journal 병합
 
-10. **10주기+**: Framework adapter robustness
+10. **10주기**: Graph-native stream (`graphStream`) ✅ 완료 (2026-08-15)
+    - Runtime Spec v0.1 §29-30 / MVP 0.4 대응 (`packages/core/src/graph-stream.ts`)
+    - Realtime source(WebSocket/SSE/BroadcastChannel/custom)를 그래프
+      노드로: push된 값이 graph state에 기록되어 downstream derived가
+      이벤트마다 재계산 (§30 stream → state → graph → UI 흐름 성립)
+    - Lazy connect: 첫 get/subscribe 시 source 연결, `connect()` idempotent
+    - Fail-closed: source error 시 status 'error' + error 노출 + teardown
+      호출 + 이후 업데이트 차단(마지막 값은 유지), subscribe 자체 throw도
+      status 'error'로 수렴 (silent fail 없음)
+    - Epoch guard: teardown 후에도 push하는 sloppy source의 late event 폐기
+    - `disconnect()`/`connect()`로 suspend/resume (§40 realtime pause 대응)
+    - 테스트 현황: TS(vitest) 145개 green (graph-stream 7개 신규), 타입체크 green.
+    - 잔여: 이벤트 semantics(동일 값 연속 push 시 알림) 선택 옵션,
+      subscriber-count 기반 auto-disconnect(§41), backpressure/버퍼 정책
+    - **State Plane 6 primitive (state/derived/resource/command/transaction/
+      stream) + expose/consume 완성 — 스펙 MVP 0.1-0.4의 그래프 로드맵 종료.**
+      다음 후보: MVP 0.5 (container lifecycle 통합·dynamic loading·health를
+      기존 ContainerManager와 연결), React adapter의 graph 노드 훅
+
+11. **11주기+**: Framework adapter robustness
    - Repeated mount/unmount
    - Error boundary
    - Memory leak 확인

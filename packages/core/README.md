@@ -107,6 +107,19 @@ const rename = command({
 });
 ```
 
+`graphStream` brings realtime sources (WebSocket, SSE, BroadcastChannel) into the same graph. Pushed values land in graph state, so derived nodes downstream react per event; source errors surface as status `error` with teardown, and late events after disconnect are dropped.
+
+```typescript
+import { derived, graphStream } from 'gaesup-state';
+
+const price = graphStream<number>({
+  subscribe: (observer) => socket.subscribe(observer) // returns teardown
+});
+
+const doubled = derived(() => (price.get() ?? 0) * 2); // recomputes per event
+price.disconnect(); // pause; connect() resumes
+```
+
 ## Resource / Query
 
 Use `resource` when API state should live with the same store model.
@@ -207,6 +220,7 @@ const count = GaesupCore.select('orders', 'count');
 | `graphResource` | Server state as a graph node (auto refetch on key change) |
 | `createGraphMesh` | Expose/consume contracts between containers |
 | `transaction` / `command` | Atomic writes, optimistic updates with rollback |
+| `graphStream` | Realtime sources as graph nodes |
 | `watch` | Selector-based dependency tracking |
 | `resource` / `query` | API request state |
 | `GaesupCore.pipeline` | Batching several dispatches |
