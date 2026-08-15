@@ -71,6 +71,7 @@ const defaultEquals = Object.is;
 let nodeSeq = 0;
 let globalVersion = 0;
 let batchDepth = 0;
+let activeJournal: Map<StateInternal<any>, any> | null = null;
 let activeCompute: DerivedInternal<any> | null = null;
 const computeStack: DerivedInternal<any>[] = [];
 const pendingNotifications = new Set<AnyNode>();
@@ -186,6 +187,7 @@ export function state<T>(initialValue: T, options: GraphNodeOptions<T> = {}): St
       const resolved =
         typeof next === 'function' ? (next as (previous: T) => T)(node.value) : next;
       if (node.equals(node.value, resolved)) return;
+      if (activeJournal && !activeJournal.has(node)) activeJournal.set(node, node.value);
       node.value = resolved;
       node.version += 1;
       globalVersion += 1;
@@ -248,4 +250,60 @@ export function batch<T>(fn: () => T): T {
     batchDepth -= 1;
     if (batchDepth === 0) flushNotifications();
   }
+}
+
+function rollbackJournal(journal: Map<StateInternal<any>, any>) {
+  for (const [node, previous] of journal) {
+    if (node.equals(node.value, previous)) continue;
+    node.value = previous;
+    node.version += 1;
+    globalVersion += 1;
+    collectAffected(node, new Set());
+  }
+}
+
+// Atomic write group (spec §27-28): notifications are deferred until commit,
+// so observers never see intermediate state; a throw reverts every write made
+// inside (nested transactions join the outermost unit).
+export function transaction<T>(fn: () => T): T {
+  const parentJournal = activeJournal;
+  const journal = parentJournal ?? new Map<StateInternal<any>, any>();
+  activeJournal = journal;
+  batchDepth += 1;
+  try {
+    return fn();
+  } catch (error) {
+    if (!parentJournal) rollbackJournal(journal);
+    throw error;
+  } finally {
+    activeJournal = parentJournal;
+    batchDepth -= 1;
+    if (batchDepth === 0) flushNotifications();
+  }
+}
+
+export interface WriteJournal {
+  revert(): void;
+}
+
+// Applies writes immediately (observers do see them — the optimistic-update
+// building block) while journaling previous values for a later revert.
+export function recordWrites(fn: () => void): WriteJournal {
+  const parentJournal = activeJournal;
+  const journal = new Map<StateInternal<any>, any>();
+  activeJournal = journal;
+  batchDepth += 1;
+  try {
+    fn();
+  } finally {
+    activeJournal = parentJournal;
+    batchDepth -= 1;
+    if (batchDepth === 0) flushNotifications();
+  }
+  return {
+    revert() {
+      rollbackJournal(journal);
+      if (batchDepth === 0) flushNotifications();
+    }
+  };
 }

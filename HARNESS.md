@@ -493,7 +493,24 @@ import { SCHEMAS } from '../fixtures/schemas';
    - 잔여: startup ordering(§73-74)과 연결한 late-binding 해석, 인스턴스
      주소(`chart/BTC`) 지원, 컨테이너 lifecycle과 mesh 등록/해제 연동
 
-9. **9주기+**: Framework adapter robustness
+9. **9주기**: Command & transaction (optimistic/rollback) ✅ 완료 (2026-08-15)
+   - Runtime Spec v0.1 §25-28 / MVP 0.3 대응 (`graph.ts` 확장 +
+     `packages/core/src/graph-command.ts`)
+   - `transaction(fn)`: write journal 기반 원자성 — 중간 상태 관찰 불가
+     (invariant I4, 커밋 시 노드당 알림 1회), throw 시 전체 revert + 알림
+     zero, 중첩 transaction은 최외곽 단위로 join, derived 일관성 유지
+   - `recordWrites(fn)`: 쓰기는 즉시 반영(optimistic 가시성)하되 이전 값
+     journal 기록, `revert()`로 정확한 복원 + 복원 값 알림
+   - `command({optimistic?, execute, commit?})`: optimistic → execute →
+     commit(성공, batch로 원자 적용) / rollback(실패, sync throw 포함).
+     실패 시 error 전파 + optimistic 없으면 상태 무변경
+   - 테스트 현황: TS(vitest) 138개 green (command/transaction 11개 신규),
+     타입체크 green.
+   - 잔여: §28 Transaction 객체(id/status) 노출, command 상태 노드
+     (idle/running/error) 관측, command 커밋 → resource 자동 invalidation
+     (§24), recordWrites가 transaction 내부에서 중첩될 때의 journal 병합
+
+10. **10주기+**: Framework adapter robustness
    - Repeated mount/unmount
    - Error boundary
    - Memory leak 확인

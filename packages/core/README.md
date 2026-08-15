@@ -89,6 +89,24 @@ const optional = mesh.consume('reco.data', { required: false }); // undefined if
 
 Missing required dependencies fail closed with `GAESUP_DEPENDENCY_UNAVAILABLE`; duplicate exposure with `GAESUP_EXPOSE_CONFLICT`. `mesh.dependencies()` returns the recorded consumer edges for introspection.
 
+`transaction` groups writes atomically — observers never see intermediate state, and a throw reverts every write. `command` layers the mutation pipeline on top: optimistic transition, execute, then commit on success or automatic rollback on failure.
+
+```typescript
+import { state, transaction, command } from 'gaesup-state';
+
+const name = state('old');
+
+transaction(() => {
+  // multiple writes commit together; a throw rolls all of them back
+});
+
+const rename = command({
+  optimistic: (next: string) => name.set(next), // visible immediately
+  execute: async (next) => api.rename(next),
+  commit: (result) => name.set(result) // or automatic rollback on rejection
+});
+```
+
 ## Resource / Query
 
 Use `resource` when API state should live with the same store model.
@@ -188,6 +206,7 @@ const count = GaesupCore.select('orders', 'count');
 | `state` / `derived` / `batch` | Reactive dependency graph |
 | `graphResource` | Server state as a graph node (auto refetch on key change) |
 | `createGraphMesh` | Expose/consume contracts between containers |
+| `transaction` / `command` | Atomic writes, optimistic updates with rollback |
 | `watch` | Selector-based dependency tracking |
 | `resource` / `query` | API request state |
 | `GaesupCore.pipeline` | Batching several dispatches |
