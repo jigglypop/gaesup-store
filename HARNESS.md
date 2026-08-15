@@ -558,11 +558,29 @@ import { SCHEMAS } from '../fixtures/schemas';
     - 테스트 현황: TS(vitest) 161개 green (캐시 4개 + persistence 8개 신규),
       타입체크 green.
 
-13. **13주기+ 로드맵** ("전부 구현" 범위 — V1/MVP 1.0 기준, V2(§58-64
-    SSR/Worker/원격 protocol) 제외):
-    - [ ] Container 통합 (MVP 0.5): `defineContainer`/`createRuntime`,
-      lifecycle 상태기계(§10), mesh 자동 배선, startup ordering(§73-74),
-      health(§42-44), failure isolation(§43)
+13. **13주기**: Container runtime 통합 ✅ 완료 (2026-08-15)
+    - Runtime Spec v0.1 §6-13, §42-44, §73-74 / MVP 0.5 대응
+      (`packages/core/src/graph-runtime.ts` + mesh `unexpose` 추가)
+    - `defineContainer({name, version?, dependencies?, setup})`: setup이
+      `{exposes}`를 반환하면 runtime이 mesh에 자동 배선. ctx로
+      container 정체성/env/consume(consumer 자동 기록) 전달
+    - Lifecycle 상태기계 (§10, invariant I5): CREATED→RESOLVING→READY→
+      STARTING→ACTIVE→SUSPENDED⇄ACTIVE→STOPPING→STOPPED→DESTROYED,
+      FAILED. 미정의 전이는 `GAESUP_INVALID_TRANSITION` fail-closed,
+      start는 idempotent
+    - Startup ordering (§73-74): 선언된 dependencies를 위상 순서로 자동
+      기동, 순환은 `GAESUP_DEPENDENCY_CYCLE`
+    - Failure isolation (§43): setup crash → 해당 컨테이너만 FAILED,
+      `onContainerError`({container, phase: resolve|setup, cause,
+      timestamp}) 보고, 나머지 컨테이너 정상 기동
+    - Dependency policy (§44): required dep FAILED → 소비자 FAILED(resolve
+      단계), optional 미존재 → ACTIVE 유지 + health 'degraded'
+    - Health (§42): failed/degraded(옵션 dep 미존재 또는 dep 비ACTIVE)/
+      healthy. destroy 시 mesh namespace 제거(unexpose)
+    - 테스트 현황: TS(vitest) 174개 green (runtime 13개 신규), 타입체크 green.
+    - 잔여: config override(§47), hot replacement(§76), container group(§72)
+
+14. **14주기+ 로드맵** ("전부 구현" 범위 — V1/MVP 1.0 기준, V2 제외):
     - [ ] Scheduler 자동 배칭 옵션 (§20) + Transaction 메타데이터 (§28)
     - [ ] Snapshot/restore + trace 이벤트 (§52-57 그래프 계층)
     - [ ] React adapter repair: 기존 훅들의 core 시그니처 드리프트 해소

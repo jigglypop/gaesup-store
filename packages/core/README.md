@@ -91,6 +91,27 @@ const optional = mesh.consume('reco.data', { required: false }); // undefined if
 
 Missing required dependencies fail closed with `GAESUP_DEPENDENCY_UNAVAILABLE`; duplicate exposure with `GAESUP_EXPOSE_CONFLICT`. `mesh.dependencies()` returns the recorded consumer edges for introspection.
 
+`defineContainer` / `createRuntime` manage containers on top of the mesh: a lifecycle state machine (CREATED → RESOLVING → READY → STARTING → ACTIVE → SUSPENDED/STOPPED → DESTROYED, undefined transitions rejected with `GAESUP_INVALID_TRANSITION`), topological startup of declared dependencies, per-container failure isolation (a setup crash marks only that container FAILED and reports through `onContainerError`), and `health()` (healthy / degraded / failed).
+
+```typescript
+import { createRuntime, defineContainer, state } from 'gaesup-state';
+
+const runtime = createRuntime({ env: { API_URL: '...' } });
+runtime.register(defineContainer({
+  name: 'auth',
+  setup: () => {
+    const user = state(null);
+    return { exposes: { user } };
+  }
+}));
+runtime.register(defineContainer({
+  name: 'portfolio',
+  dependencies: ['auth'],
+  setup: ({ consume }) => ({ user: consume('auth.user') })
+}));
+runtime.startAll(); // auth first, then portfolio
+```
+
 `transaction` groups writes atomically — observers never see intermediate state, and a throw reverts every write. `command` layers the mutation pipeline on top: optimistic transition, execute, then commit on success or automatic rollback on failure.
 
 ```typescript
@@ -223,6 +244,7 @@ const count = GaesupCore.select('orders', 'count');
 | `createGraphMesh` | Expose/consume contracts between containers |
 | `transaction` / `command` | Atomic writes, optimistic updates with rollback |
 | `graphStream` | Realtime sources as graph nodes |
+| `defineContainer` / `createRuntime` | Container lifecycle, startup ordering, health |
 | `watch` | Selector-based dependency tracking |
 | `resource` / `query` | API request state |
 | `GaesupCore.pipeline` | Batching several dispatches |

@@ -2077,6 +2077,7 @@ export * from './graph-command';
 export * from './graph-mesh';
 export * from './graph-persist';
 export * from './graph-resource';
+export * from './graph-runtime';
 export * from './graph-stream';
 export * from './micro-sandbox';
 export * from './sandbox-orchestrator';

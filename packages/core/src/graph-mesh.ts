@@ -37,8 +37,10 @@ export interface DependencyEdge {
 
 export interface GraphMesh {
   expose(namespace: string, entries: Record<string, unknown>): void;
+  unexpose(namespace: string): void;
   consume<T = unknown>(address: string, options?: ConsumeOptions & { required?: true }): T;
   consume<T = unknown>(address: string, options: ConsumeOptions & { required: false }): T | undefined;
+  consume<T = unknown>(address: string, options?: ConsumeOptions): T;
   dependencies(): DependencyEdge[];
 }
 
@@ -72,6 +74,16 @@ export function createGraphMesh(): GraphMesh {
           throw new GraphMeshError('GAESUP_EXPOSE_CONFLICT', `"${address}" is already exposed`);
         }
         exposed.set(address, value);
+      }
+    },
+
+    unexpose(namespace) {
+      const prefix = `${namespace}.`;
+      for (const address of [...exposed.keys()]) {
+        if (address.startsWith(prefix)) {
+          exposed.delete(address);
+          facades.delete(address);
+        }
       }
     },
 
