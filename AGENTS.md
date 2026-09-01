@@ -1,271 +1,125 @@
-# AGENTS.md
-
-## 역할
-
-이 저장소에서 작업하는 에이전트는 Gaesup을 단순 상태 관리 라이브러리가 아니라 **부분 배포 프론트엔드 컨테이너를 위한 WASM 기반 상태 계약 런타임**으로 다룬다.
-
-핵심 제품 축은 다음이다.
-
-- WASM state engine
-- Container manifest validation
-- Store schema compatibility guard
-- Framework adapters
-- Partial deployment workflow
-- Step/state-machine runtime
-- Observability and rollback support
-
-## 하네스 엔지니어링 관점
-
-이 저장소의 테스트와 예제는 데모가 아니라 **런타임 계약을 증명하는 하네스**로 다룬다. 하네스는 제품 코드를 느슨하게 통과시키기 위한 장치가 아니라, container attach 전에 어떤 계약이 반드시 강제되는지 반복 가능하게 보여주는 실행 가능한 증거여야 한다.
-
-하네스가 검증해야 하는 핵심 질문은 다음이다.
-
-1. 이 컨테이너가 attach되기 전에 hash/signature, ABI, schema, permission, import, deployment slot 계약을 통과했는가?
-2. 실패 경로가 성공 경로만큼 명확하게 검증되는가?
-3. mock, fixture, fake runtime이 실제 sandbox runtime처럼 오해되지 않도록 이름과 경계가 분명한가?
-4. 테스트가 구현 세부사항보다 public contract와 operator-visible event/error code를 검증하는가?
-5. CI에서 변경된 manifest, artifact, slot pointer만 검증해도 전체 계약 안전성이 유지되는가?
-
-## 최우선 방향
-
-1. 컨테이너는 로드된다고 신뢰하지 않는다. hash/signature, ABI, schema, permission, import, deployment slot 계약을 통과한 뒤에만 attach한다.
-2. 선언적 manifest 필드는 실제 런타임 정책으로 강제되어야 한다. 특히 `permissions`, `allowedImports`, store schema policy는 문서만 두지 않는다.
-3. WASM은 hot path와 deterministic transition에 우선 사용한다. 큰 JSON 객체를 JS/WASM 경계로 반복 이동시키는 설계는 피한다.
-4. Side effect는 WASM에서 직접 실행하지 않는다. WASM은 effect descriptor를 반환하고, JS host가 permission check 후 실행한다.
-5. Framework adapter는 얇게 유지하되 lifecycle 계약은 강하게 맞춘다.
-
-## 구현 원칙
-
-### KISS
-
-- 가장 단순하게 동작하는 구현을 먼저 만든다.
-- 추상화는 실제 중복이나 복잡도를 줄일 때만 추가한다.
-- 새 runtime layer, registry, adapter abstraction을 만들기 전에 기존 코드의 패턴을 우선 사용한다.
-- 복잡한 statechart 기능은 flat step workflow가 안정화된 뒤에만 확장한다.
-
-### DRY
-
-- 같은 manifest/schema/permission 검증 로직을 Rust, TS, script에 중복으로 흩뿌리지 않는다.
-- 에러 코드, policy 이름, lifecycle event 이름은 한 곳의 계약을 기준으로 맞춘다.
-- React/Vue/Svelte/Angular adapter는 프레임워크별 표현만 다르게 하고 lifecycle 의미는 공유한다.
-- 테스트 fixture와 manifest 예제는 재사용 가능한 형태로 둔다.
-
-### Fail Closed
-
-- 권한, import, schema compatibility, artifact hash가 애매하면 허용하지 않는다.
-- allowlist가 없으면 deny가 기본이다.
-- compatibility check 실패 시 mount 전에 차단하거나 명시적으로 isolate/shadow 처리한다.
-- 실패를 조용히 무시하지 말고 stable error code와 audit event를 남긴다.
-
-### 작은 변경
-
-- 한 PR/작업은 하나의 제품 계약 또는 버그에 집중한다.
-- unrelated refactor, 포맷 대량 변경, 파일 이동은 피한다.
-- 성능 최적화는 benchmark 또는 측정 지점과 함께 한다.
-- public API를 바꿀 때는 문서와 테스트를 함께 갱신한다.
-
-## 하네스 작성 원칙
-
-### Contract-First
-
-- 테스트는 내부 구현 함수 호출 여부보다 public API, manifest result, timeline event, audit event, stable error code를 우선 검증한다.
-- 성공 케이스만 추가하지 않는다. 같은 변경에는 가능한 한 fail-closed 케이스를 함께 둔다.
-- 하네스에서 허용한 fixture가 실제 runtime에서도 허용되는지 확인한다. fixture 전용 예외는 명시적으로 이름에 드러낸다.
-- 새 manifest field는 validator test, runtime enforcement test, 예제 manifest를 함께 갱신한다.
-
-### Fake와 Real Runtime 경계
-
-- fake, mock, stub, demo container는 실제 sandbox처럼 포장하지 않는다.
-- fake runtime은 계약 하나를 고립해서 검증할 때만 사용하고, 이름에 `fake`, `mock`, `demo`, `inMemory` 같은 의도를 드러낸다.
-- 외부 `.wasm` artifact attach 경로는 hash/signature, `allowedImports`, permission, isolation을 통과하는 통합 하네스가 있어야 한다.
-- `ContainerManager` 같은 demo/in-memory lifecycle API와 `MicroSandboxRuntime`/`FrontendSandboxOrchestrator` 같은 sandbox attach API를 섞지 않는다.
-
-### Fixture와 Golden Data
-
-- fixture manifest는 실제 spec과 drift되지 않게 유지한다.
-- invalid fixture는 왜 invalid인지 파일명이나 테스트명에 드러낸다.
-- fixture를 재사용하되, 테스트가 서로 상태를 공유해 순서 의존성을 만들지 않는다.
-- snapshot/golden output은 operator가 읽을 수 있는 error code, target, message, audit event를 포함해야 한다.
-
-### Determinism
-
-- 시간, random id, network, filesystem, worker lifecycle은 테스트에서 제어 가능한 seam을 둔다.
-- 테스트는 순서와 머신 환경에 덜 민감해야 한다.
-- flaky test를 통과시키기 위해 assertion을 느슨하게 만들지 않는다. 원인을 격리하거나 하네스를 고친다.
-- benchmark는 pass/fail 기준과 측정 의도를 분리한다. 성능 regression check와 탐색용 benchmark를 혼동하지 않는다.
-
-### CI Harness
-
-- changed-path detection은 변경된 container만 찾되, shared validator/script/release-plan 변경 시 영향 범위를 넓힌다.
-- CI는 검증된 artifact만 registry slot pointer로 승격해야 한다.
-- compatibility 실패는 배포 차단으로 이어져야 하며, 로그에는 어떤 slot/manifest/policy가 실패했는지 남아야 한다.
-- rollback 하네스는 새 빌드를 만들지 않고 slot pointer가 이전 검증 artifact를 가리키는지 확인한다.
-
-## 금지 사항
-
-- `any`로 public contract를 숨기지 않는다. 임시 `any`가 필요하면 내부 구현에만 국한하고 TODO 근거를 남긴다.
-- mock container를 실제 sandbox runtime처럼 포장하지 않는다.
-- manifest field를 추가하고 runtime enforcement 없이 끝내지 않는다.
-- permission check를 UI 표시나 문서 안내로 대체하지 않는다.
-- WASM 내부에서 네트워크, 스토리지, DOM side effect를 직접 실행하는 방향으로 설계하지 않는다.
-- 전체 XState 호환성, browser Docker 같은 과장된 claim을 하지 않는다.
-- parallel/nested statechart, visual editor 같은 V2 기능을 V1 안정화 전에 끌어오지 않는다.
-- generic JSON state 최적화를 측정 없이 과하게 진행하지 않는다.
-- adapter마다 서로 다른 lifecycle semantics를 만들지 않는다.
-- 테스트를 통과시키기 위해 검증을 느슨하게 만들지 않는다.
-- 하네스에서만 통과하는 특수 경로를 제품 계약처럼 문서화하지 않는다.
-- flaky test를 `skip`, timeout 증가, 넓은 matcher만으로 덮지 않는다.
-
-## 필수 계약
-
-### Container Runtime
-
-- 외부 `.wasm` artifact는 hash/signature 검증 후 로드한다.
-- `allowedImports`를 강제한다.
-- host function은 capability registry를 통해서만 주입한다.
-- Worker 또는 iframe isolation이 필요한 runtime은 격리된 실행 경계를 사용한다.
-- container memory, storage namespace, event channel, network access를 분리한다.
-- denied capability는 audit log에 남긴다.
-
-### Store Schema
-
-- 기본 conflict policy는 `reject`다.
-- `isolate`는 공유 store 대신 격리 store에 attach한다.
-- `migrate`는 공유 store attach 전에 migration을 완료해야 한다.
-- `readonly`는 incompatible container의 write를 거부한다.
-- `shadow`는 preview/testing용 copied state에서만 실행한다.
-- `dual-write`는 점진 migration 중 old/new schema write를 명시적으로 기록한다.
-
-### Adapter Contract
-
-모든 framework adapter는 같은 의미의 계약을 제공해야 한다.
-
-- `mount`
-- `unmount`
-- `subscribe`
-- `dispatch`
-- `getSnapshot`
-- `onError`
-
-반드시 보장할 것:
-
-- unmount 시 subscription cleanup.
-- mount 실패 시 명확한 error propagation.
-- isolated store fallback 동작 일관성.
-- repeated mount/unmount 테스트.
-
-### Machine Runtime
-
-Machine V1은 다음 범위만 목표로 한다.
-
-- flat finite states
-- event transitions
-- named guards
-- assign/context updates
-- entry/exit/action descriptors
-- final states
-- snapshots
-- step history
-- rollback
-- store metrics와 DevTools timeline 연동
-
-V1에서는 다음을 하지 않는다.
-
-- nested states
-- parallel states
-- delayed transitions
-- actor-like child machines
-- promise/observable/websocket actors
-- full XState compatibility
-
-## Observability
-
-다음 event는 runtime timeline에 남기는 것을 기본 방향으로 한다.
-
-- `manifest:fetched`
-- `manifest:validated`
-- `container:loaded`
-- `store:attached`
-- `store:isolated`
-- `machine:transitioned`
-- `effect:requested`
-- `effect:denied`
-- `container:stopped`
-
-metrics는 store, container, machine, deployment slot 단위로 추적할 수 있어야 한다.
-
-## CI/CD
-
-- GitHub Actions에서 변경된 container를 감지한다.
-- 영향받은 manifest만 검증한다.
-- 영향받은 artifact만 빌드한다.
-- 검증된 container만 registry slot pointer를 업데이트한다.
-- compatibility check 실패 시 배포를 차단한다.
-- rollback은 slot pointer를 이전 artifact로 되돌리는 방식으로 지원한다.
-
-## 테스트 기준
-
-필수 테스트:
-
-- fail-closed import/permission behavior
-- artifact hash mismatch
-- schema reject/isolate/migrate/readonly/shadow policy
-- repeated adapter mount/unmount cleanup
-- failed mount behavior
-- machine guard rejection
-- invalid transition
-- final state
-- rollback
-- persisted machine snapshot
-- changed-path notification
-- sandbox/demo runtime boundary
-- audit/timeline event for denied capability
-
-성능 테스트:
-
-- JSON path
-- batch path
-- typed fast lane
-- machine transition
-
-하네스 품질 테스트:
-
-- changed-path detection
-- affected manifest validation
-- registry slot pointer update
-- rollback pointer restoration
-- invalid fixture stays blocked
-
-## 문서 기준
-
-문서는 구현과 같이 움직인다.
-
-- runtime behavior가 바뀌면 관련 docs를 갱신한다.
-- manifest spec 변경은 예제 manifest와 validator test를 함께 갱신한다.
-- public API 변경은 README 또는 API reference에 반영한다.
-- 아직 구현되지 않은 기능은 implemented처럼 쓰지 않는다.
-- 하네스 전용 fake 또는 demo 경로는 실제 sandbox/runtime 보장처럼 설명하지 않는다.
-
-## 작업 전 체크
-
-작업을 시작하기 전에 다음을 확인한다.
-
-1. 이 변경이 state contract runtime 방향에 맞는가?
-2. runtime enforcement가 있는가, 아니면 문서/타입만 있는가?
-3. 실패 시 fail-closed인가?
-4. adapter나 manifest contract를 깨지 않는가?
-5. 테스트나 benchmark로 확인할 수 있는가?
-6. mock/fake가 실제 runtime 경계를 흐리지 않는가?
-7. operator가 실패 원인을 audit/timeline/error code로 알 수 있는가?
-
-## 작업 후 체크
-
-작업이 끝나면 다음을 확인한다.
-
-1. 관련 테스트를 실행했다.
-2. 실행하지 못한 테스트는 이유를 남겼다.
-3. public API/manifest/docs 변경이 동기화됐다.
-4. 불필요한 refactor나 포맷 변경이 섞이지 않았다.
-5. operator가 실패 원인을 알 수 있는 error code 또는 audit event가 있다.
-6. 하네스가 성공 경로뿐 아니라 실패 경로를 검증한다.
-7. fixture, 예제 manifest, CI script가 같은 계약을 바라본다.
+# AGENTS.md — Gaesup 공용 에이전트 원칙
+
+이 파일은 이 저장소에서 작업하는 **모든 코딩 에이전트(Claude Code, Codex 등)의 단일 진실 공급원**이다.
+도구별 부가 설정: Claude Code → `CLAUDE.md` + `.claude/`, Codex → `.codex/`.
+라운드 오케스트레이션은 `.claude/ARCHITECTURE.md`, 작업 저널은 `HARNESS.md`를 따른다.
+
+## 1. 프로젝트 정체성
+
+Gaesup은 단순 상태 관리 라이브러리가 아니라 **프론트엔드 마이크로 컨테이너 런타임 + 통합 State Plane 라이브러리 코어**다.
+규범 스펙은 `docs/runtime-spec-v0.1.md`(§ 번호로 인용)이며, 테스트 주석과 라운드 계약이 이 § 번호를 참조한다.
+
+핵심 축: reactive graph(state/derived/resource/stream/command/transaction), container runtime
+(lifecycle/expose/consume/failure isolation), manifest validation(fail-closed), framework adapters, observability.
+
+## 2. 패키지 지형 — 두 세대가 공존한다
+
+### 2세대 (Runtime Spec v0.1 재작성, `@gaesup/*`) — 현재 R1 라운드 대상, 전부 스텁
+
+| 경로 | npm | 상태 |
+|---|---|---|
+| `packages/gaesup-core` | `@gaesup/core` | `src/index.ts = export {}`. 빨간 테스트(batch, lifecycle) 존재 |
+| `packages/gaesup-store` | `@gaesup/store` | 스텁. 빨간 테스트(state, derived) 존재 |
+| `packages/gaesup-runtime` | `@gaesup/runtime` | 스텁, 테스트 없음 |
+| `packages/gaesup-react` | `@gaesup/react` | 스텁, 테스트 없음 |
+
+⚠️ 이 4개는 아직 `pnpm install`이 안 된 상태일 수 있다 (`node_modules/@gaesup/` 부재 시 테스트가 import 해석부터 실패).
+작업 전 `pnpm install` 필요 여부를 확인하라.
+
+### 1세대 (출시 계열, `gaesup-state` / `@gaesup-state/*`) — 보존, 그래프 plane의 현재 구현체
+
+| 경로 | npm | 내용 |
+|---|---|---|
+| `packages/core` | `gaesup-state` | 실질 코어. ① WASM 파사드(`index.ts`: GaesupCore, CompatibilityGuard, ContainerManager, auto-store, machine) ② **순수 JS reactive graph** (`graph*.ts`: state/derived/batch/transaction/scheduler/snapshot, runtime, mesh, resource, stream, command, persist — cycle 6~15 산출물) ③ sandbox 격리(`micro-sandbox.ts`, `sandbox-orchestrator.ts`) |
+| `packages/core-rust` | `gaesup-state-core-rust` | Rust/WASM: store, container, machine, render, **compatibility.rs(manifest validator, fail-closed)**. wasm-pack 3타깃 빌드 |
+| `packages/adapter` | `@gaesup-state/adapter` | 프레임워크 공통 어댑터 계약 |
+| `packages/frameworks/{react,vue,svelte,angular}` | `@gaesup-state/<fw>` | 어댑터. react만 테스트 보유 |
+| `packages/registry` | `@gaesup-state/registry` | private, **워크스페이스 제외** (`!packages/registry`) |
+
+기타: `examples/monorepo-containers`(배포 가드 하네스, CI가 실행), `examples/multi-framework-demo`,
+`tests/integration/`(루트 유일 통합 테스트), `benchmarks/`, `tools/container-builder`.
+
+## 3. 최우선 방향
+
+1. **Fail closed**: 컨테이너는 로드된다고 신뢰하지 않는다. hash/signature, ABI, schema, permission,
+   import, deployment slot 계약을 통과한 뒤에만 attach. allowlist가 없으면 deny가 기본.
+   애매하면 허용하지 않는다. 실패는 조용히 무시하지 않고 stable error code + audit/trace 이벤트를 남긴다.
+2. **선언은 강제로**: manifest 필드(`permissions`, `allowedImports`, store schema policy)는 문서가 아니라
+   실제 런타임 정책으로 강제한다.
+3. **코어는 프레임워크를 모른다**: `@gaesup/core·store·runtime`(그리고 `packages/core`의 graph plane)에
+   react/DOM 의존 금지 (스펙 I8). 어댑터는 얇게, lifecycle 계약은 강하게.
+4. **WASM 경계**: WASM은 hot path·결정론적 전이에만. side effect는 WASM에서 직접 실행하지 않는다 —
+   effect descriptor를 반환하고 JS host가 permission check 후 실행. 큰 JSON을 JS/WASM 경계로 반복 이동 금지.
+5. **KISS/DRY/작은 변경**: 가장 단순한 동작 구현 먼저. 추상화는 실제 중복(3곳 이상)을 줄일 때만.
+   같은 검증 로직을 Rust/TS/script에 중복 산포 금지. 에러 코드·이벤트 이름은 한 곳의 계약 기준.
+   요청 범위 밖 리팩터·포맷 대량 변경·파일 이동 연쇄 금지.
+
+## 4. 명명·코드 규약 (실측 기준)
+
+- **에러 코드**: SCREAMING_SNAKE 문자열 리터럴.
+  - graph plane: `GAESUP_` 접두 + 모듈별 `<Name>ErrorCode` union + `.code`를 갖는 `<Name>Error extends Error`
+    (예: `GAESUP_DEPENDENCY_CYCLE`, `GAESUP_INVALID_TRANSITION`).
+  - 1세대 런타임/정책: 접두 없는 도메인 코드 (`STORE_SCHEMA_CONFLICT`, `EFFECT_PERMISSION_DENIED`, …).
+  - Rust validator: `validation_issue(code, …)` 경유 (`ABI_VERSION_MISMATCH`, `MANIFEST_HASH_INVALID`, …).
+  - 새 코드는 기존 계열에 맞춘다. 새 계열 신설 금지.
+- **이벤트 이름**: `namespace:verb-과거형(kebab)` — `manifest:validated`, `store:conflict-rejected`,
+  `deployment:rolled-back`. graph trace만 예외적으로 `state-change` | `derived-recompute` 스타일.
+- **TypeScript**: 루트 `tsconfig.json`은 최고 강도(strict + noUnused* + exactOptionalPropertyTypes +
+  noImplicitReturns/Override). `packages/gaesup-*`는 루트를 extend하므로 이 강도를 그대로 받는다.
+  `packages/core`는 독립 tsconfig(더 느슨). 새 코드는 루트 강도 기준으로 작성.
+- **테스트**: vitest, 패키지 내 `src/*.test.ts(x)` **동일 위치 배치** (`__tests__` 디렉터리 금지).
+  vitest 설정 파일 없음(기본값 사용).
+  - `packages/core`: `describe('<module>')` + 영어 행동 서술 `it('registers as CREATED and walks to ACTIVE on start')`.
+  - `packages/gaesup-*`: `it('test_<snake_case>')` + 스펙 § 인용 한국어 주석.
+  - Rust: `#[cfg(test)] mod tests` + `#[test] fn snake_case_행동서술()` + `serde_json::json!` fixture,
+    `errors[0]["code"]` assert. **네이티브 cargo test** — wasm-pack 브라우저 테스트 신설 금지.
+  - 성공 케이스만 만들지 않는다 — fail-closed 케이스가 본체. fake/mock은 이름에 fake임이 드러나게
+    (`DemoContainerManager` vs `MicroSandboxRuntime` 경계 혼동 금지).
+- **언어**: 문서·주석·에이전트 파일은 한국어, 식별자·에러 코드는 영어.
+
+## 5. 검증 명령 — 이것만 신뢰하라 (CI와 동일)
+
+```bash
+cargo check --manifest-path packages/core-rust/Cargo.toml
+cargo test  --manifest-path packages/core-rust/Cargo.toml
+pnpm --filter gaesup-state run type-check
+pnpm --filter gaesup-state run test
+pnpm --filter gaesup-state run build
+pnpm --filter @gaesup/core run test          # (2세대, install 후) store/runtime/react 동일 패턴
+pnpm --filter @gaesup/core run type-check
+pnpm run example:monorepo                    # 배포 가드 fixture 검증
+pnpm run bench:runtime                       # 성능 민감 라운드에서만
+pnpm run npm:check                           # 배포 전 종합
+```
+
+### 쓰지 말 것 (알려진 지뢰)
+
+- `pnpm -r run test` / `pnpm -r run type-check` — 실패한다. vue/svelte/angular는 테스트 파일 0개로
+  vitest가 비정상 종료하고, `@gaesup-state/react`는 존재하지 않는 `./hooks/useRuntimeMetrics` re-export로
+  type-check가 깨져 있으며(사전 존재 실패 — 라운드 계약 없이 손대지 말 것), gaesup-* 스텁은 미설치 상태일 수 있다.
+- `pnpm run lint` — ESLint 설정 파일이 저장소에 없다. lint는 비기능 상태.
+- `pnpm run test:e2e` — playwright testMatch(`*.e2e.ts`/`*.spec.ts`)에 걸리는 파일이 없다.
+- `pnpm run docker:up` — compose 파일은 루트가 아니라 `docker/docker-compose.wasm.yml`에 있다.
+- `wasm-pack test --chrome` — CI도 쓰지 않는다. Rust 검증은 네이티브 `cargo test`.
+- `tests/integration/multi-framework.test.ts` — 존재하지 않는 `gaesup-state/immer` 등 서브패스를 import(사전 존재 실패).
+
+메모리 주의: core·adapter·gaesup-* 패키지 스크립트는 `node --max-old-space-size=4096 ../../node_modules/...`
+경유 실행이 확립된 패턴이다. 새 스크립트도 이 패턴을 유지하라.
+
+## 6. 하네스 규칙 (요약)
+
+- 작업 단위는 **라운드** = 계약 1개. 계약(YAML)이 유일한 작업 명세 — 계약에 없는 것은 하지 않는다.
+  계약 `packages` allowlist 밖 파일 수정 = 실패. 상태 기계·게이트(G0~G6)는 `.claude/ARCHITECTURE.md`.
+- **게이트 판정은 명령의 exit code만 믿는다.** 에이전트의 "통과했다" 보고는 판정에 쓰지 않는다.
+- 사전 존재 실패(이번 diff와 무관한 기존 실패)는 별도 표기하고 손대지 않는다.
+- 테스트를 구현에 맞게 완화하지 않는다. 빨간 테스트가 틀렸다고 판단되면 고치지 말고 보고.
+- 라운드 결과는 `HARNESS.md` 저널(6단계 주기 목록)에 기록한다. 기록은 확정 사실만.
+- **커밋은 사용자 승인 후에만.** lockfile·설정 파일 무단 변경 금지. 신규 의존성은 계약의
+  `allowed_new_deps`에 명시된 것만.
+
+### 알려진 계약 드리프트 (다음 라운드에서 해소할 것)
+
+R1 계약(`.claude/rounds/R1-mvp-0.1.yaml`)의 에러 코드와 `packages/core` graph plane의 기구현 코드가 다르다:
+계약 `GAESUP_DUPLICATE_CONTAINER`/`GAESUP_CONSUME_NOT_EXPOSED`/`GAESUP_READONLY_NODE` ↔
+구현 `GAESUP_CONTAINER_ALREADY_REGISTERED`/`GAESUP_DEPENDENCY_UNAVAILABLE`/`GAESUP_EXPOSE_CONFLICT`.
+2세대 이식 시 어느 쪽을 규범으로 삼을지 계약 단계(CONTRACT)에서 확정하고 한쪽으로 통일하라.
